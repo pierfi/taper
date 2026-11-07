@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256" role="img" aria-labelledby="t">
+  <title id="t">taper — cuneo, onda tagliata</title>
+  <defs>
+    <linearGradient id="g0" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="0" y2="256"><stop offset="0" stop-color="#f8f2e7"/><stop offset="1" stop-color="#ebe1cf"/></linearGradient>
+  </defs>
+  <rect x="0" y="0" width="256" height="256" rx="56" fill="url(#g0)"/>
+  <rect x="33.0" y="82.0" width="10" height="92" rx="5.0" fill="#1d2433"/>
+  <rect x="48.0" y="98.0" width="10" height="60" rx="5.0" fill="#1d2433"/>
+  <rect x="63.0" y="63.0" width="10" height="130" rx="5.0" fill="#1d2433"/>
+  <rect x="78.0" y="76.0" width="10" height="104" rx="5.0" fill="#1d2433"/>
+  <rect x="93.0" y="43.0" width="10" height="170" rx="5.0" fill="#1d2433"/>
+  <rect x="108.0" y="58.0" width="10" height="140" rx="5.0" fill="#1d2433"/>
+  <rect x="138.0" y="37.0" width="10" height="182" rx="5.0" fill="#1d2433"/>
+  <rect x="153.0" y="79.0" width="10" height="98" rx="5.0" fill="#1d2433"/>
+  <rect x="168.0" y="53.0" width="10" height="150" rx="5.0" fill="#1d2433"/>
+  <rect x="183.0" y="93.0" width="10" height="70" rx="5.0" fill="#1d2433"/>
+  <rect x="198.0" y="68.0" width="10" height="120" rx="5.0" fill="#1d2433"/>
+  <rect x="213.0" y="84.0" width="10" height="88" rx="5.0" fill="#1d2433"/>
+  <line x1="133.0" y1="36" x2="123.0" y2="220" stroke="#e4572e" stroke-width="6" stroke-linecap="round"/>
+</svg>
