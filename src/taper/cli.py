@@ -8,6 +8,7 @@ from typing import Annotated
 import typer
 
 from taper import __version__
+from taper.core.plan import DEFAULT_MIN_SEGMENT_S, DEFAULT_SILENCE_DB, DEFAULT_SILENCE_MIN_S
 from taper.core.progress import ProgressEvent
 from taper.errors import TaperError
 
@@ -91,9 +92,57 @@ def fetch(
 
 
 @app.command()
-def plan(file: Annotated[Path, typer.Argument(help="File audio sorgente.")]) -> None:
+def plan(
+    file: Annotated[Path, typer.Argument(help="File audio sorgente.", exists=True, dir_okay=False)],
+    out: Annotated[
+        Path | None,
+        typer.Option("--out", "-o", help="Dove scrivere il piano (default: <file>.plan.yaml)."),
+    ] = None,
+    source: Annotated[
+        str, typer.Option("--source", help="auto | chapters | description | silence")
+    ] = "auto",
+    silence_db: Annotated[
+        float, typer.Option("--silence-db", help="Soglia del silenzio in dB.")
+    ] = DEFAULT_SILENCE_DB,
+    silence_min: Annotated[
+        float, typer.Option("--silence-min", help="Durata minima del silenzio (s).")
+    ] = DEFAULT_SILENCE_MIN_S,
+    min_segment: Annotated[
+        float, typer.Option("--min-segment", help="Durata minima di un brano (s), solo silenzi.")
+    ] = DEFAULT_MIN_SEGMENT_S,
+    force: Annotated[bool, typer.Option("--force", help="Sovrascrivi un piano esistente.")] = False,
+) -> None:
     """Genera un piano di taglio YAML modificabile a mano."""
-    _not_implemented("plan")
+    from taper.core.ffmpeg import probe_audio
+    from taper.core.plan import PlanOptions, generate_plan, save_plan
+    from taper.core.sidecar import load_sidecar
+    from taper.core.timestamps import format_short
+
+    target = out or file.with_name(file.stem + ".plan.yaml")
+    try:
+        if target.exists() and not force:
+            raise TaperError(
+                f"Il piano '{target}' esiste già.",
+                "Usa --force per sovrascriverlo o scegli un altro --out.",
+            )
+        info = load_sidecar(file)
+        duration_ms = probe_audio(file).duration_ms
+        options = PlanOptions(source, silence_db, silence_min, min_segment)
+        result = generate_plan(file, info, duration_ms, options)
+        save_plan(result.plan, target, result.notes, overwrite=force)
+    except TaperError as error:
+        raise fail(error) from error
+
+    typer.secho(
+        f"Piano creato da '{result.source}': {len(result.plan.segments)} segmenti",
+        fg=typer.colors.GREEN,
+    )
+    for i, seg in enumerate(result.plan.segments, start=1):
+        start, end = format_short(seg.start_ms), format_short(seg.end_ms)
+        typer.echo(f"  {i:2d}. {start:>8} → {end:>8}  {seg.title}")
+    for note in result.notes:
+        typer.secho(f"  ! {note}", fg=typer.colors.YELLOW)
+    typer.echo(f"\nPiano: {target}\nModificalo se serve, poi: taper cut {file} --plan {target}")
 
 
 @app.command()

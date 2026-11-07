@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import subprocess
 from dataclasses import dataclass
@@ -67,6 +68,57 @@ def parse_probe(data: dict[str, Any]) -> AudioInfo:
         channels=_to_int(stream.get("channels")),
         format_name=fmt.get("format_name"),
     )
+
+
+_SILENCE_START = re.compile(r"silence_start:\s*(-?\d+(?:\.\d+)?)")
+_SILENCE_END = re.compile(r"silence_end:\s*(-?\d+(?:\.\d+)?)")
+
+
+def parse_silencedetect(stderr: str, duration_ms: int | None = None) -> list[tuple[int, int]]:
+    """Parse ffmpeg `silencedetect` log output into (start_ms, end_ms) pairs (pure).
+
+    A trailing silence that never ends is closed at `duration_ms` when known.
+    """
+    silences: list[tuple[int, int]] = []
+    start: int | None = None
+    for line in stderr.splitlines():
+        if m := _SILENCE_START.search(line):
+            start = max(0, round(float(m.group(1)) * 1000))
+        elif (m := _SILENCE_END.search(line)) and start is not None:
+            silences.append((start, round(float(m.group(1)) * 1000)))
+            start = None
+    if start is not None and duration_ms is not None and duration_ms > start:
+        silences.append((start, duration_ms))
+    return silences
+
+
+def detect_silences(
+    path: Path, *, noise_db: float, min_silence_s: float, duration_ms: int | None = None
+) -> list[tuple[int, int]]:
+    """Run ffmpeg silencedetect on `path`."""
+    ffmpeg = find_tool("ffmpeg")
+    proc = subprocess.run(
+        [
+            ffmpeg,
+            "-hide_banner",
+            "-nostats",
+            "-i",
+            str(path),
+            "-af",
+            f"silencedetect=noise={noise_db}dB:d={min_silence_s}",
+            "-f",
+            "null",
+            "-",
+        ],  # fmt: skip
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+    if proc.returncode != 0:
+        detail = proc.stderr.strip().splitlines()[-1:] or ["errore sconosciuto"]
+        raise SourceError(f"ffmpeg non riesce a leggere '{path}': {detail[0]}")
+    return parse_silencedetect(proc.stderr, duration_ms)
 
 
 def probe_audio(path: Path) -> AudioInfo:
