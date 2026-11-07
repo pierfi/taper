@@ -57,6 +57,13 @@ Come si taglia (senza perdere qualità):
   l'altro (gapless), ma con lo stream copy di mp3/aac può restare un piccolo click ai
   confini.
 
+Subito dopo il taglio `cut` scrive i tag (titolo, artista, album artist, album, anno,
+numero traccia e totale) e incorpora la copertina: la miniatura del video ritagliata in
+quadrato al centro (JPEG, max 1200 px). Formati supportati: opus, ogg, m4a, mp3, flac.
+Per file locali la copertina viene cercata come `<nome>.jpg|png|webp` o `cover.jpg` accanto
+al file; `--no-cover` la disattiva. I tag vengono dal piano YAML (sezione `album` e titoli
+dei segmenti), quindi correggi lì artista, album e anno prima di tagliare.
+
 Nota: per YouTube yt-dlp può richiedere un runtime JavaScript esterno (es. deno);
 se il download fallisce, aggiorna yt-dlp (`uv lock --upgrade-package yt-dlp`).
 

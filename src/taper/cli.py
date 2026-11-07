@@ -156,17 +156,23 @@ def cut(
         typer.Option("--out", "-o", help="Cartella dei brani (default: <cartella>/tracks)."),
     ] = None,
     force: Annotated[bool, typer.Option("--force", help="Rigenera brani già esistenti.")] = False,
+    no_cover: Annotated[
+        bool, typer.Option("--no-cover", help="Non incorporare la copertina.")
+    ] = False,
 ) -> None:
-    """Taglia i segmenti del piano (stream copy quando possibile). L'originale non si tocca."""
-    from taper.core.cut import MODE_COPY, MODE_LOSSLESS, cut_plan
+    """Taglia i segmenti (stream copy quando possibile) e scrive tag e copertina."""
+    from taper.core.cut import MODE_COPY, MODE_LOSSLESS
+    from taper.core.pipeline import cut_and_tag
     from taper.core.plan import load_plan
+    from taper.core.sidecar import load_sidecar
     from taper.core.timestamps import format_short
 
     target_dir = out or file.parent / "tracks"
 
     def render(event: ProgressEvent) -> None:
-        if event.stage == "cut":
-            typer.echo(f"  [{event.message}]", err=True)
+        if event.stage in ("cut", "tag"):
+            verb = "taglio" if event.stage == "cut" else "tag"
+            typer.echo(f"  {verb} [{event.message}]", err=True)
 
     try:
         loaded = load_plan(plan)
@@ -177,9 +183,18 @@ def cut(
                 fg=typer.colors.YELLOW,
                 err=True,
             )
-        results = cut_plan(file, loaded, target_dir, overwrite=force, on_event=render)
+        outcome = cut_and_tag(
+            file,
+            loaded,
+            target_dir,
+            info=load_sidecar(file),
+            embed_cover=not no_cover,
+            overwrite=force,
+            on_event=render,
+        )
     except TaperError as error:
         raise fail(error) from error
+    results = outcome.results
 
     labels = {MODE_COPY: "copy", MODE_LOSSLESS: "flac (lossless)"}
     typer.secho(f"Tagliati {len(results)} brani in {target_dir}", fg=typer.colors.GREEN)
@@ -194,7 +209,10 @@ def cut(
         typer.secho(f"{reencoded} brani ricodificati: qualità ridotta.", fg=typer.colors.YELLOW)
     else:
         typer.echo("Nessuna perdita di qualità.")
-    typer.echo("Tag, copertina ed export in libreria: prossimi passi.")
+    cover = "con copertina" if outcome.cover else "senza copertina"
+    typer.echo(f"Tag scritti ({cover}). Export in libreria: prossimo passo.")
+    for note in outcome.notes:
+        typer.secho(f"  ! {note}", fg=typer.colors.YELLOW)
 
 
 @app.command()
