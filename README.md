@@ -1,4 +1,14 @@
-# taper
+<p align="center">
+  <img src="assets/logo.svg" alt="Logo di taper: una forma d'onda tagliata da un marcatore" width="140">
+</p>
+
+<h1 align="center">taper</h1>
+
+<p align="center">
+  <em>Scarica, taglia, tagga, archivia. Senza ricodificare.</em>
+</p>
+
+---
 
 App personale a riga di comando per scaricare tracce audio (YouTube e le altre fonti
 supportate da [yt-dlp](https://github.com/yt-dlp/yt-dlp)), dividerle in brani — caso d'uso
