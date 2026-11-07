@@ -40,6 +40,23 @@ nel YAML da quale sorgente arriva. Controlla sempre `album.artist`, `album.album
 non coincidono con artista e data del concerto. Il piano esistente non viene mai
 sovrascritto senza `--force`.
 
+```bash
+# Taglia i segmenti del piano in <cartella>/tracks/NN - Titolo.ext
+uv run taper cut taper-downloads/<id>/<id>.opus --plan taper-downloads/<id>/<id>.plan.yaml
+```
+
+Come si taglia (senza perdere qualità):
+
+- **Sorgenti lossy** (opus, m4a/aac, mp3, ogg): *stream copy*, poi ffprobe verifica durata e
+  inizio del brano. Solo se il taglio non è preciso (oltre 2 frame del codec) quel singolo
+  segmento viene ricodificato con lo stesso codec, e il comando lo segnala in giallo.
+- **Sorgenti lossless** (flac, wav, alac): ricodificate in FLAC, che è preciso al campione
+  e non perde nulla.
+- L'originale non viene mai modificato; i brani esistenti non vengono sovrascritti senza
+  `--force`. I segmenti contigui dei piani generati non lasciano buchi tra un brano e
+  l'altro (gapless), ma con lo stream copy di mp3/aac può restare un piccolo click ai
+  confini.
+
 Nota: per YouTube yt-dlp può richiedere un runtime JavaScript esterno (es. deno);
 se il download fallisce, aggiorna yt-dlp (`uv lock --upgrade-package yt-dlp`).
 

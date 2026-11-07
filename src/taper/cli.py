@@ -147,11 +147,54 @@ def plan(
 
 @app.command()
 def cut(
-    file: Annotated[Path, typer.Argument(help="File audio sorgente.")],
-    plan: Annotated[Path, typer.Option("--plan", help="Piano di taglio YAML.")],
+    file: Annotated[Path, typer.Argument(help="File audio sorgente.", exists=True, dir_okay=False)],
+    plan: Annotated[
+        Path, typer.Option("--plan", help="Piano di taglio YAML.", exists=True, dir_okay=False)
+    ],
+    out: Annotated[
+        Path | None,
+        typer.Option("--out", "-o", help="Cartella dei brani (default: <cartella>/tracks)."),
+    ] = None,
+    force: Annotated[bool, typer.Option("--force", help="Rigenera brani già esistenti.")] = False,
 ) -> None:
-    """Taglia, tagga ed esporta i segmenti del piano."""
-    _not_implemented("cut")
+    """Taglia i segmenti del piano (stream copy quando possibile). L'originale non si tocca."""
+    from taper.core.cut import MODE_COPY, MODE_LOSSLESS, cut_plan
+    from taper.core.plan import load_plan
+    from taper.core.timestamps import format_short
+
+    target_dir = out or file.parent / "tracks"
+
+    def render(event: ProgressEvent) -> None:
+        if event.stage == "cut":
+            typer.echo(f"  [{event.message}]", err=True)
+
+    try:
+        loaded = load_plan(plan)
+        if loaded.source_file and loaded.source_file != file.name:
+            typer.secho(
+                f"Attenzione: il piano è stato creato per '{loaded.source_file}', "
+                f"ma stai tagliando '{file.name}'.",
+                fg=typer.colors.YELLOW,
+                err=True,
+            )
+        results = cut_plan(file, loaded, target_dir, overwrite=force, on_event=render)
+    except TaperError as error:
+        raise fail(error) from error
+
+    labels = {MODE_COPY: "copy", MODE_LOSSLESS: "flac (lossless)"}
+    typer.secho(f"Tagliati {len(results)} brani in {target_dir}", fg=typer.colors.GREEN)
+    for r in results:
+        mode = labels.get(r.mode, "RICODIFICATO")
+        typer.echo(f"  {r.path.name}  ({format_short(r.audio_info.duration_ms)}, {mode})")
+    for r in results:
+        for warning in r.warnings:
+            typer.secho(f"  ! {warning}", fg=typer.colors.YELLOW)
+    reencoded = sum(r.reencoded for r in results)
+    if reencoded:
+        typer.secho(f"{reencoded} brani ricodificati: qualità ridotta.", fg=typer.colors.YELLOW)
+    else:
+        typer.echo("Nessuna perdita di qualità.")
+    typer.echo("Tag, copertina ed export in libreria: prossimi passi.")
 
 
 @app.command()

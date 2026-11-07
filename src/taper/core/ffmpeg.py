@@ -6,11 +6,12 @@ import json
 import re
 import shutil
 import subprocess
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from taper.errors import SourceError, ToolNotFoundError
+from taper.errors import CancelledError, SourceError, ToolNotFoundError
 
 _INSTALL_HINT = (
     "Installa ffmpeg: 'sudo apt install ffmpeg' (Debian/Ubuntu/WSL), "
@@ -29,6 +30,7 @@ class AudioInfo:
     sample_rate: int | None
     channels: int | None
     format_name: str | None = None
+    start_time_ms: int | None = None  # timestamp of the first packet
 
 
 def find_tool(name: str) -> str:
@@ -60,6 +62,12 @@ def parse_probe(data: dict[str, Any]) -> AudioInfo:
     except (TypeError, ValueError):
         raise SourceError("Impossibile determinare la durata del file audio.") from None
 
+    start = stream.get("start_time") or fmt.get("start_time")
+    try:
+        start_time_ms = round(float(start) * 1000) if start is not None else None
+    except (TypeError, ValueError):
+        start_time_ms = None
+
     return AudioInfo(
         codec=str(stream.get("codec_name", "unknown")),
         duration_ms=duration_ms,
@@ -67,6 +75,7 @@ def parse_probe(data: dict[str, Any]) -> AudioInfo:
         sample_rate=_to_int(stream.get("sample_rate")),
         channels=_to_int(stream.get("channels")),
         format_name=fmt.get("format_name"),
+        start_time_ms=start_time_ms,
     )
 
 
@@ -144,3 +153,28 @@ def probe_audio(path: Path) -> AudioInfo:
         detail = proc.stderr.strip() or "errore sconosciuto"
         raise SourceError(f"ffprobe non riesce a leggere '{path}': {detail}")
     return parse_probe(json.loads(proc.stdout))
+
+
+def run_ffmpeg(args: list[str], *, cancel: threading.Event | None = None) -> None:
+    """Run ffmpeg quietly; kill it promptly if `cancel` is set. Raises on failure."""
+    cmd = [find_tool("ffmpeg"), "-hide_banner", "-nostdin", "-loglevel", "error", "-y", *args]
+    proc = subprocess.Popen(
+        cmd,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+    while True:
+        try:
+            _, stderr = proc.communicate(timeout=0.2)
+            break
+        except subprocess.TimeoutExpired:
+            if cancel is not None and cancel.is_set():
+                proc.kill()
+                proc.communicate()
+                raise CancelledError("Operazione annullata.") from None
+    if proc.returncode != 0:
+        detail = (stderr or "").strip()[-500:] or "errore sconosciuto"
+        raise SourceError(f"ffmpeg ha fallito: {detail}")
