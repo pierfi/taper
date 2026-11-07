@@ -66,6 +66,28 @@ def artist_dirname(artist: str | None) -> str:
     return sanitize_component(artist or "", fallback="Unknown Artist")
 
 
+def create_unique_dir(path: Path) -> Path:
+    """Create `path`, or `path (2)`, `path (3)`... if taken, and return what was created.
+
+    Uses mkdir itself to claim the name, so two runs cannot grab the same folder.
+    Never merges into an existing folder and respects the 255-byte limit.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    n = 1
+    while True:
+        if n == 1:
+            candidate = path
+        else:
+            suffix = f" ({n})"
+            room = MAX_COMPONENT_BYTES - len(suffix.encode("utf-8"))
+            candidate = path.with_name(_truncate_bytes(path.name, room).rstrip(" .") + suffix)
+        try:
+            candidate.mkdir()
+            return candidate
+        except FileExistsError:
+            n += 1
+
+
 def unique_path(path: Path) -> Path:
     """Return `path`, or `path` with ` (2)`, ` (3)`... if it already exists. Never overwrites."""
     if not path.exists():

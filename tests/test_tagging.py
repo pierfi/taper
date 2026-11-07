@@ -192,7 +192,7 @@ def test_cli_cut_writes_tags(tmp_path_factory):
     src = _prepare_source(tmp_path_factory)
     plan_path = src.with_name("p.yaml")
     save_plan(_plan3(), plan_path)
-    result = CliRunner().invoke(app, ["cut", str(src), "--plan", str(plan_path)])
+    result = CliRunner().invoke(app, ["cut", str(src), "--plan", str(plan_path), "--no-library"])
     assert result.exit_code == 0, result.output
     assert "con copertina" in result.output
     tags, cover = read_tags(src.parent / "tracks" / "02 - Two.opus")

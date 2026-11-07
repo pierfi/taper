@@ -8,6 +8,7 @@ from typing import Annotated
 import typer
 
 from taper import __version__
+from taper.config import DEFAULT_LIBRARY, ENV_LIBRARY, resolve_library
 from taper.core.plan import DEFAULT_MIN_SEGMENT_S, DEFAULT_SILENCE_DB, DEFAULT_SILENCE_MIN_S
 from taper.core.progress import ProgressEvent
 from taper.errors import TaperError
@@ -159,10 +160,26 @@ def cut(
     no_cover: Annotated[
         bool, typer.Option("--no-cover", help="Non incorporare la copertina.")
     ] = False,
+    library: Annotated[
+        Path | None,
+        typer.Option(
+            "--library",
+            "-l",
+            help=f"Radice della libreria (default: ${ENV_LIBRARY} o {DEFAULT_LIBRARY}).",
+        ),
+    ] = None,
+    no_library: Annotated[
+        bool, typer.Option("--no-library", help="Solo brani taggati, senza export né database.")
+    ] = False,
+    allow_duplicate: Annotated[
+        bool,
+        typer.Option("--allow-duplicate", help="Esporta anche se la sorgente è già in libreria."),
+    ] = False,
 ) -> None:
-    """Taglia i segmenti (stream copy quando possibile) e scrive tag e copertina."""
+    """Taglia (stream copy quando possibile), tagga, esporta in libreria e registra nel DB."""
     from taper.core.cut import MODE_COPY, MODE_LOSSLESS
-    from taper.core.pipeline import cut_and_tag
+    from taper.core.library import db_path
+    from taper.core.pipeline import apply_plan
     from taper.core.plan import load_plan
     from taper.core.sidecar import load_sidecar
     from taper.core.timestamps import format_short
@@ -170,9 +187,9 @@ def cut(
     target_dir = out or file.parent / "tracks"
 
     def render(event: ProgressEvent) -> None:
-        if event.stage in ("cut", "tag"):
-            verb = "taglio" if event.stage == "cut" else "tag"
-            typer.echo(f"  {verb} [{event.message}]", err=True)
+        verbs = {"cut": "taglio", "tag": "tag", "export": "export"}
+        if event.stage in verbs:
+            typer.echo(f"  {verbs[event.stage]} [{event.message}]", err=True)
 
     try:
         loaded = load_plan(plan)
@@ -183,13 +200,16 @@ def cut(
                 fg=typer.colors.YELLOW,
                 err=True,
             )
-        outcome = cut_and_tag(
+        library_root = None if no_library else resolve_library(library)
+        outcome = apply_plan(
             file,
             loaded,
             target_dir,
+            library=library_root,
             info=load_sidecar(file),
             embed_cover=not no_cover,
             overwrite=force,
+            allow_duplicate=allow_duplicate,
             on_event=render,
         )
     except TaperError as error:
@@ -197,7 +217,8 @@ def cut(
     results = outcome.results
 
     labels = {MODE_COPY: "copy", MODE_LOSSLESS: "flac (lossless)"}
-    typer.secho(f"Tagliati {len(results)} brani in {target_dir}", fg=typer.colors.GREEN)
+    where = outcome.export.album_dir if outcome.export else target_dir
+    typer.secho(f"Tagliati {len(results)} brani → {where}", fg=typer.colors.GREEN)
     for r in results:
         mode = labels.get(r.mode, "RICODIFICATO")
         typer.echo(f"  {r.path.name}  ({format_short(r.audio_info.duration_ms)}, {mode})")
@@ -210,7 +231,12 @@ def cut(
     else:
         typer.echo("Nessuna perdita di qualità.")
     cover = "con copertina" if outcome.cover else "senza copertina"
-    typer.echo(f"Tag scritti ({cover}). Export in libreria: prossimo passo.")
+    typer.echo(f"Tag scritti ({cover}).")
+    if outcome.export and library_root:
+        typer.echo(f"Libreria: {library_root}")
+        typer.echo(f"Database: {db_path(library_root)}")
+        if outcome.export.cover:
+            typer.echo(f"Copertina: {outcome.export.cover.name}")
     for note in outcome.notes:
         typer.secho(f"  ! {note}", fg=typer.colors.YELLOW)
 

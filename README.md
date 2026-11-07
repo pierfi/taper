@@ -64,6 +64,26 @@ Per file locali la copertina viene cercata come `<nome>.jpg|png|webp` o `cover.j
 al file; `--no-cover` la disattiva. I tag vengono dal piano YAML (sezione `album` e titoli
 dei segmenti), quindi correggi lì artista, album e anno prima di tagliare.
 
+## Libreria
+
+`taper cut` esporta i brani taggati in una libreria ordinata e li registra in SQLite:
+
+```
+<libreria>/Artista/Anno - Album/NN - Titolo.ext      (+ cover.jpg)
+<libreria>/.taper/library.db                         (percorsi relativi: la libreria è spostabile)
+```
+
+- **Dove**: `--library`, altrimenti `$TAPER_LIBRARY`, altrimenti `~/taper-library` (default
+  temporaneo, nel filesystem Linux/WSL). Una libreria su un disco Windows (`/mnt/c/...`)
+  viene rifiutata, a meno di impostare `TAPER_ALLOW_WINDOWS_PATHS=1`.
+- **Mai sovrascrivere**: se la cartella dell'album esiste già ne viene creata una nuova
+  (`Anno - Album (2)`); i nomi sono sanificati per Linux e Windows (max 255 byte).
+- **Idempotenza**: la sorgente è identificata dall'hash del file; riesportarla è rifiutato
+  prima di tagliare, a meno di `--allow-duplicate`.
+- **Database**: per ogni brano salva URL di origine, data di aggiunta, percorso, codec,
+  bitrate, durata e se è stato ricodificato.
+- `--no-library` salta export e database e lascia i brani taggati in `--out`.
+
 Nota: per YouTube yt-dlp può richiedere un runtime JavaScript esterno (es. deno);
 se il download fallisce, aggiorna yt-dlp (`uv lock --upgrade-package yt-dlp`).
 

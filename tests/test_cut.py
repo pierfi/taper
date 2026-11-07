@@ -181,9 +181,9 @@ def test_cli_cut_end_to_end(tmp_path_factory):
     plan_path = src.with_name("p.yaml")
     save_plan(three_segments(), plan_path)
     runner = CliRunner()
-    result = runner.invoke(app, ["cut", str(src), "--plan", str(plan_path)])
+    result = runner.invoke(app, ["cut", str(src), "--plan", str(plan_path), "--no-library"])
     assert result.exit_code == 0, result.output
     assert "Tagliati 3 brani" in result.output and "Nessuna perdita di qualità" in result.output
     assert len(list((src.parent / "tracks").glob("*.opus"))) == 3
-    again = runner.invoke(app, ["cut", str(src), "--plan", str(plan_path)])
+    again = runner.invoke(app, ["cut", str(src), "--plan", str(plan_path), "--no-library"])
     assert again.exit_code == 1 and "--force" in again.output
