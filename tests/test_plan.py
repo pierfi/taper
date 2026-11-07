@@ -299,3 +299,16 @@ def test_cli_plan_from_sidecar(tmp_path, monkeypatch):
 
 def test_module_exports():
     assert plan_mod.SOURCE_CHOICES[0] == "auto"
+
+
+def test_album_override_wins_and_drops_matching_notes():
+    info = _info(description="00:00 X\n01:00 Y")
+    plain = generate_plan(Path("a.opus"), info, DURATION)
+    over = generate_plan(
+        Path("a.opus"), info, DURATION, album_override=AlbumMeta("The Band", "Live 99", 1999)
+    )
+    assert over.plan.album == AlbumMeta("The Band", "Live 99", 1999)
+    assert len(plain.notes) == 3 and over.notes == []
+    partial = generate_plan(Path("a.opus"), info, DURATION, album_override=AlbumMeta(artist="Me"))
+    assert partial.plan.album.artist == "Me" and partial.plan.album.year == 2024
+    assert len(partial.notes) == 2  # the artist note is gone, year/album notes remain

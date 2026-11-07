@@ -10,11 +10,20 @@ from taper.config import ensure_library_allowed
 from taper.core.cover import CoverImage, find_cover_source, make_square_cover
 from taper.core.cut import CutResult, cut_plan
 from taper.core.export import ExportResult, export_to_library
+from taper.core.fetch import FetchResult
+from taper.core.fetch import fetch as fetch_source
 from taper.core.library import file_sha256, find_source
+from taper.core.plan import (
+    PlanOptions,
+    apply_album_override,
+    generate_plan,
+    load_plan,
+    save_plan,
+)
 from taper.core.progress import ProgressCallback, ProgressEvent, check_cancelled, emit
 from taper.core.tagging import tags_for_plan, write_tags
 from taper.errors import TaperError
-from taper.models import CutPlan, SourceInfo
+from taper.models import AlbumMeta, CutPlan, SourceInfo
 
 
 @dataclass
@@ -69,6 +78,23 @@ class ApplyResult:
     export: ExportResult | None = None  # None when no library was requested
 
 
+def check_duplicate(source: Path, library: Path, *, allow_duplicate: bool = False) -> str:
+    """Hash of `source`; raises if it is already in the library (unless allowed).
+
+    Call it before spending time cutting (and before asking the user to review a plan).
+    """
+    ensure_library_allowed(library)
+    source_hash = file_sha256(source)
+    existing = find_source(library, source_hash)
+    if existing and not allow_duplicate:
+        raise TaperError(
+            f"Questa sorgente è già in libreria ('{existing.title}', {existing.track_count} "
+            f"brani, aggiunta il {existing.added_at}; es. {existing.first_path}).",
+            "Usa --allow-duplicate per esportarla di nuovo in una nuova cartella.",
+        )
+    return source_hash
+
+
 def apply_plan(
     source: Path,
     plan: CutPlan,
@@ -88,15 +114,7 @@ def apply_plan(
     """
     source_hash = None
     if library is not None:
-        ensure_library_allowed(library)
-        source_hash = file_sha256(source)
-        existing = find_source(library, source_hash)  # fail BEFORE spending time cutting
-        if existing and not allow_duplicate:
-            raise TaperError(
-                f"Questa sorgente è già in libreria ('{existing.title}', {existing.track_count} "
-                f"brani, aggiunta il {existing.added_at}; es. {existing.first_path}).",
-                "Usa --allow-duplicate per esportarla di nuovo in una nuova cartella.",
-            )
+        source_hash = check_duplicate(source, library, allow_duplicate=allow_duplicate)
 
     outcome = cut_and_tag(
         source, plan, staging_dir, info=info, embed_cover=embed_cover,
@@ -110,3 +128,56 @@ def apply_plan(
             info=info, cover=outcome.cover, on_event=on_event, cancel=cancel,
         )  # fmt: skip
     return ApplyResult(outcome.results, outcome.cover, outcome.notes, export)
+
+
+@dataclass
+class Prepared:
+    """Everything `run` needs to show the plan for review (nothing has been cut yet)."""
+
+    fetch: FetchResult
+    plan: CutPlan
+    plan_path: Path
+    source: str  # "chapters" / "description" / "silence", or "existing" for a reused plan
+    notes: list[str]
+
+    @property
+    def audio(self) -> Path:
+        return self.fetch.audio
+
+
+def prepare(
+    url: str,
+    root: Path,
+    *,
+    options: PlanOptions | None = None,
+    album_override: AlbumMeta | None = None,
+    on_event: ProgressCallback | None = None,
+    cancel: threading.Event | None = None,
+) -> Prepared:
+    """Download (or reuse) the source and produce its plan file. Never cuts anything.
+
+    An existing `<id>.plan.yaml` is reused, so hand edits are never lost; explicit
+    `album_override` values (--artist/--album/--year) are applied to it and saved.
+    """
+    fetched = fetch_source(url, root, on_event=on_event, cancel=cancel)
+    plan_path = fetched.audio.with_name(fetched.audio.stem + ".plan.yaml")
+    if plan_path.exists():
+        plan = load_plan(plan_path)
+        notes = ["Piano esistente riutilizzato (le tue modifiche sono conservate)."]
+        if album_override and any(
+            (album_override.artist, album_override.album, album_override.year)
+        ):
+            plan.album = apply_album_override(plan.album, album_override)
+            save_plan(plan, plan_path, overwrite=True)
+            notes.append("Artista/album/anno forniti da riga di comando applicati al piano.")
+        return Prepared(fetched, plan, plan_path, "existing", notes)
+
+    result = generate_plan(
+        fetched.audio,
+        fetched.info,
+        fetched.audio_info.duration_ms,
+        options,
+        album_override=album_override,
+    )
+    save_plan(result.plan, plan_path, result.notes)
+    return Prepared(fetched, result.plan, plan_path, result.source, result.notes)

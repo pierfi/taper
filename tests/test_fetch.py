@@ -77,9 +77,14 @@ class FakeYDL:
     def __exit__(self, *exc):
         return False
 
+    downloads = 0
+
     def extract_info(self, url, download=True):
         if FakeYDL.behavior == "unsupported":
             raise DownloadError(f"ERROR: Unsupported URL: {url}")
+        if not download:  # metadata only, nothing on disk
+            return dict(YDL_INFO)
+        FakeYDL.downloads += 1
         for status in (
             {"status": "downloading", "downloaded_bytes": 50, "total_bytes": 100},
             {"status": "finished"},
@@ -100,6 +105,7 @@ class FakeYDL:
 @pytest.fixture
 def patched(monkeypatch):
     FakeYDL.behavior = "ok"
+    FakeYDL.downloads = 0
     monkeypatch.setattr(fetch_mod.yt_dlp, "YoutubeDL", FakeYDL)
     monkeypatch.setattr(fetch_mod, "find_tool", lambda name: f"/usr/bin/{name}")
     monkeypatch.setattr(fetch_mod, "probe_audio", lambda path: AUDIO_INFO)
@@ -140,3 +146,24 @@ def test_fetch_requires_ffmpeg(monkeypatch, tmp_path):
     monkeypatch.setattr(fetch_mod, "find_tool", missing)
     with pytest.raises(ToolNotFoundError):
         fetch_mod.fetch("https://example.com/x", tmp_path)
+
+
+def test_fetch_reuses_complete_download(patched, tmp_path):
+    first = fetch_mod.fetch("https://example.com/watch?v=abc123", tmp_path)
+    events = []
+    second = fetch_mod.fetch("https://example.com/watch?v=abc123", tmp_path, on_event=events.append)
+    assert FakeYDL.downloads == 1  # the second call did not download again
+    assert second.audio == first.audio and second.info == first.info
+    assert second.thumbnail == first.thumbnail
+    assert any("riuso" in e.message for e in events)
+
+
+def test_fetch_incomplete_download_is_not_reused(patched, tmp_path):
+    fetch_mod.fetch("https://example.com/watch?v=abc123", tmp_path)
+    (tmp_path / "abc123" / "abc123.taper.json").unlink()  # sidecar missing = incomplete
+    assert fetch_mod.find_existing(tmp_path, "abc123") is None
+    import shutil
+
+    shutil.rmtree(tmp_path / "abc123")
+    fetch_mod.fetch("https://example.com/watch?v=abc123", tmp_path)
+    assert FakeYDL.downloads == 2

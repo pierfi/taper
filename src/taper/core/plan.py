@@ -116,6 +116,17 @@ def segments_from_silences(
 # ----------------------------------------------------------------------- generation
 
 
+def apply_album_override(album: AlbumMeta, override: AlbumMeta | None) -> AlbumMeta:
+    """Fields set in `override` (artist/album/year given by the user) win over `album`."""
+    if override is None:
+        return album
+    return AlbumMeta(
+        artist=override.artist or album.artist,
+        album=override.album or album.album,
+        year=override.year or album.year,
+    )
+
+
 def generate_plan(
     audio: Path,
     info: SourceInfo | None,
@@ -123,6 +134,7 @@ def generate_plan(
     options: PlanOptions | None = None,
     *,
     detector: SilenceDetector | None = None,
+    album_override: AlbumMeta | None = None,
 ) -> PlanResult:
     """Create a plan for `audio` (`info` is None for local files without a sidecar)."""
     options = options or PlanOptions()
@@ -188,18 +200,22 @@ def generate_plan(
         album=info.title if info else audio.stem,
         year=info.default_year if info else None,
     )
-    if info and not (info.artist or info.creator) and info.uploader:
+    override = album_override or AlbumMeta()
+    if info and not (info.artist or info.creator) and info.uploader and not override.artist:
         notes.append(
             f"Artista ricavato dal canale '{info.uploader}': "
-            "probabilmente va corretto in 'album.artist'."
+            "probabilmente va corretto in 'album.artist' (o con --artist)."
         )
-    if info and info.upload_date:
+    if info and info.upload_date and not override.year:
         notes.append(
             f"Anno ricavato dalla data di upload ({info.upload_date}): "
-            "potrebbe non essere l'anno del concerto."
+            "potrebbe non essere l'anno del concerto (--year)."
         )
-    if info and info.title:
-        notes.append("Il titolo dell'album è il titolo del video: sistemalo in 'album.album'.")
+    if info and info.title and not override.album:
+        notes.append(
+            "Il titolo dell'album è il titolo del video: sistemalo in 'album.album' (--album)."
+        )
+    album = apply_album_override(album, override)
 
     plan = CutPlan(source_file=audio.name, album=album, segments=segments)
     return PlanResult(plan, used, notes)

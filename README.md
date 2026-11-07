@@ -64,6 +64,27 @@ Per file locali la copertina viene cercata come `<nome>.jpg|png|webp` o `cover.j
 al file; `--no-cover` la disattiva. I tag vengono dal piano YAML (sezione `album` e titoli
 dei segmenti), quindi correggi lì artista, album e anno prima di tagliare.
 
+## Tutto in un comando: `taper run`
+
+```bash
+uv run taper run "https://www.youtube.com/watch?v=..." \
+    --artist "John Mayer" --album "Live at the Talkhouse" --year 2019
+```
+
+Scarica (o riusa un download già fatto), crea il piano e **si ferma** a mostrartelo, con
+artista, album, anno e l'elenco dei brani. Poi chiede: `c` continua, `e` apre il piano
+nell'editor (`$VISUAL` / `$EDITOR`, altrimenti nano/vim) e lo ricontrolla, `a` annulla.
+Un piano non valido non si può confermare finché non è corretto. Solo dopo taglia, tagga
+ed esporta in libreria.
+
+- `--artist`, `--album`, `--year` (anche su `plan`) sostituiscono i metadati ricavati dal
+  video: titolo e canale YouTube raramente coincidono con album e artista del concerto.
+- `--yes` salta la revisione (serve anche senza terminale, ad esempio negli script).
+- Se esiste già un piano per quel video viene riutilizzato: le tue modifiche non si perdono.
+- Una sorgente già presente in libreria viene rifiutata *prima* della revisione
+  (`--allow-duplicate` per esportarla comunque); un percorso di libreria non ammesso viene
+  rifiutato prima ancora di scaricare.
+
 ## Libreria
 
 `taper cut` esporta i brani taggati in una libreria ordinata e li registra in SQLite:

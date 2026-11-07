@@ -12,7 +12,7 @@ from yt_dlp.utils import DownloadError
 
 from taper.core.ffmpeg import AudioInfo, find_tool, probe_audio
 from taper.core.progress import ProgressCallback, ProgressEvent, check_cancelled, emit
-from taper.core.sidecar import save_sidecar
+from taper.core.sidecar import load_sidecar, save_sidecar, sidecar_path
 from taper.errors import CancelledError, SourceError
 from taper.models import Chapter, SourceInfo
 
@@ -94,14 +94,40 @@ def _audio_path_from(info: dict[str, Any]) -> Path:
     return Path(filepath)
 
 
+AUDIO_EXTENSIONS = (".opus", ".m4a", ".mp3", ".ogg", ".flac", ".wav")
+
+
+def find_existing(root: Path, video_id: str) -> FetchResult | None:
+    """A complete earlier download of `video_id` (audio + sidecar), if there is one."""
+    workdir = root / video_id
+    audio = next(
+        (
+            workdir / f"{video_id}{ext}"
+            for ext in AUDIO_EXTENSIONS
+            if (workdir / f"{video_id}{ext}").is_file()
+        ),
+        None,
+    )
+    info = load_sidecar(audio) if audio else None
+    if audio is None or info is None:
+        return None
+    thumb = find_thumbnail(workdir, audio.stem)
+    return FetchResult(workdir, audio, sidecar_path(audio), thumb, info, probe_audio(audio))
+
+
 def fetch(
     url: str,
     root: Path,
     *,
+    reuse: bool = True,
     on_event: ProgressCallback | None = None,
     cancel: threading.Event | None = None,
 ) -> FetchResult:
-    """Download `url` into `root/<video id>/` and write the metadata sidecar."""
+    """Download `url` into `root/<video id>/` and write the metadata sidecar.
+
+    With `reuse` (default) a complete earlier download is returned as is, without
+    downloading again.
+    """
     find_tool("ffmpeg")
     find_tool("ffprobe")
     check_cancelled(cancel)
@@ -122,6 +148,12 @@ def fetch(
     options = build_ydl_options(root, [hook])
     try:
         with yt_dlp.YoutubeDL(options) as ydl:
+            if reuse:
+                meta = ydl.extract_info(url, download=False)
+                existing = find_existing(root, str(meta["id"])) if meta and meta.get("id") else None
+                if existing:
+                    emit(on_event, ProgressEvent("done", 1.0, "Già scaricato: riuso il file"))
+                    return existing
             data = ydl.extract_info(url, download=True)
     except CancelledError:
         raise
