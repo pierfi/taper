@@ -46,18 +46,28 @@ tests/
 
 ## Passi
 
-| # | Passo | Contenuto | Test |
-|---|-------|-----------|------|
-| 0 | Scaffolding | pyproject, ruff/pytest, CLI vuota (`--version`, comandi stub), errors, models, naming | naming, round-trip modelli |
-| 1 | fetch | ffmpeg.py, fetch.py, workdir, sidecar | build opzioni yt-dlp, scrittura sidecar (rete mockata) |
-| 2 | plan | timestamps.py, capitoli, silencedetect, YAML I/O, validate_plan | parsing timestamp, validazione, YAML quoting |
-| 3 | cut | copy/lossless/ricodifica + verifica, `.part`, `tracks/` | audio sintetico via ffmpeg (skipif senza ffmpeg) |
-| 4 | tagging + cover | mutagen per 4 formati, crop quadrato, embedding | round-trip tag per formato |
-| 5 | library + export | export.py, cover.jpg, SQLite, idempotenza | schema, collisioni, path relativi |
-| 6 | run end-to-end | pipeline.py, conferma/`--yes`, apertura editor | integrazione su file sintetico |
-| 7 | Rifinitura | README (installazione, esempi, nota ToS), messaggi d'errore | — |
+| # | Passo | Contenuto | Test | Stato |
+|---|-------|-----------|------|-------|
+| 0 | Scaffolding | pyproject, ruff/pytest, CLI vuota (`--version`, comandi stub), errors, models, naming | naming, round-trip modelli | fatto |
+| 1 | fetch | ffmpeg.py, fetch.py, workdir, sidecar | build opzioni yt-dlp, scrittura sidecar (rete mockata) | fatto |
+| 2 | plan | timestamps.py, capitoli, silencedetect, YAML I/O, validate_plan | parsing timestamp, validazione, YAML quoting | fatto |
+| 3 | cut | copy/lossless/ricodifica + verifica, `.part`, `tracks/` | audio sintetico via ffmpeg (skipif senza ffmpeg) | fatto |
+| 4 | tagging + cover | mutagen per 4 formati, crop quadrato, embedding | round-trip tag per formato | fatto |
+| 5 | library + export | export.py, cover.jpg, SQLite, idempotenza | schema, collisioni, path relativi | fatto |
+| 6 | run end-to-end | pipeline.py, conferma/`--yes`, apertura editor | integrazione su file sintetico | fatto |
+| 7 | Rifinitura | README (installazione, esempi, nota ToS), messaggi d'errore | — | fatto |
 
 ## Prerequisiti ambiente
 
 - `ffmpeg`/`ffprobe` **non installati** (serve `sudo apt install ffmpeg`); i test ffmpeg sono sotto `skipif`.
 - Python 3.12 gestito da uv (`.python-version`).
+
+## Deviazioni dal piano iniziale
+
+- `taper cut` esegue anche tag, copertina, export e registrazione nel DB (`--no-library` per
+  i soli file taggati); non esistono comandi separati per tag ed export.
+- `run` ha `--artist/--album/--year` (anche `plan`), riuso del download e del piano esistenti.
+- Libreria predefinita provvisoria in `~/taper-library` (filesystem Linux), con rifiuto dei
+  percorsi `/mnt/<lettera>/` salvo `TAPER_ALLOW_WINDOWS_PATHS=1`.
+- Cattura del bug di seek: `-ss` va messo DOPO `-i` nello stream copy (altrimenti l'inizio
+  può anticipare di centinaia di ms senza che la durata lo riveli).

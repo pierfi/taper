@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import threading
 from dataclasses import dataclass
 from pathlib import Path
@@ -60,6 +61,56 @@ def source_info_from_ydl(
     )
 
 
+class _SilentLogger:
+    """yt-dlp would print its own 'ERROR: ...' on top of ours; we report errors ourselves."""
+
+    def debug(self, msg: str) -> None: ...
+    def info(self, msg: str) -> None: ...
+    def warning(self, msg: str) -> None: ...
+    def error(self, msg: str) -> None: ...
+
+
+_UPDATE_HINT = (
+    "Aggiorna yt-dlp ('uv lock --upgrade-package yt-dlp' poi 'uv sync'); "
+    "per YouTube può servire anche un runtime JavaScript esterno (es. deno)."
+)
+
+
+def describe_download_error(text: str, url: str) -> tuple[str, str | None]:
+    """Turn a yt-dlp error into (message, hint) the user can act on (pure)."""
+    clean = re.sub(r"^(\s*ERROR:\s*)+", "", text.strip())
+    low = clean.lower()
+    if "unsupported url" in low:
+        return (
+            f"URL non supportato: {url}",
+            "Controlla l'indirizzo; 'yt-dlp --list-extractors' elenca le fonti supportate.",
+        )
+    if "is not a valid url" in low:
+        return (
+            f"URL non valido: {url}",
+            "Serve un indirizzo completo, ad esempio https://www.youtube.com/watch?v=...",
+        )
+    if "http error 404" in low:
+        return f"Pagina non trovata (404): {url}", "Controlla l'indirizzo."
+    if any(
+        k in low for k in ("name resolution", "getaddrinfo", "network is unreachable", "timed out")
+    ):
+        return "Connessione non riuscita.", "Controlla la connessione a internet e riprova."
+    if any(k in low for k in ("private video", "members-only", "sign in", "confirm your age")):
+        return (
+            "Contenuto non accessibile senza accesso (privato, per iscritti o con limite d'età).",
+            "taper non gestisce login o cookie: usa un contenuto pubblico.",
+        )
+    if any(
+        k in low for k in ("video unavailable", "this video is not available", "has been removed")
+    ):
+        return (
+            "Video non disponibile (rimosso, privato o bloccato nel tuo paese).",
+            "Controlla l'indirizzo aprendolo nel browser.",
+        )
+    return f"Download fallito: {clean}", _UPDATE_HINT
+
+
 def build_ydl_options(root: Path, progress_hooks: list[Any] | None = None) -> dict[str, Any]:
     """yt-dlp options: best audio, native codec, one work dir per video id."""
     root_escaped = str(root).replace("%", "%%")  # outtmpl treats % specially
@@ -73,6 +124,7 @@ def build_ydl_options(root: Path, progress_hooks: list[Any] | None = None) -> di
         "quiet": True,
         "no_warnings": True,
         "noprogress": True,
+        "logger": _SilentLogger(),
         "progress_hooks": progress_hooks or [],
     }
 
@@ -159,17 +211,8 @@ def fetch(
         raise
     except DownloadError as exc:
         check_cancelled(cancel)  # yt-dlp may wrap an exception raised by our hook
-        text = str(exc)
-        if "Unsupported URL" in text:
-            raise SourceError(
-                f"URL non supportato: {url}",
-                "Controlla l'URL o usa 'yt-dlp --list-extractors' per le fonti supportate.",
-            ) from exc
-        raise SourceError(
-            f"Download fallito: {text}",
-            "Aggiorna yt-dlp ('uv lock --upgrade-package yt-dlp'); "
-            "per YouTube può servire anche un runtime JS (es. deno).",
-        ) from exc
+        message, hint = describe_download_error(str(exc), url)
+        raise SourceError(message, hint) from exc
 
     if data is None:
         raise SourceError(f"Nessun risultato per {url}")

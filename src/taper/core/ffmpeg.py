@@ -150,8 +150,11 @@ def probe_audio(path: Path) -> AudioInfo:
         errors="replace",
     )
     if proc.returncode != 0:
-        detail = proc.stderr.strip() or "errore sconosciuto"
-        raise SourceError(f"ffprobe non riesce a leggere '{path}': {detail}")
+        detail = (proc.stderr.strip() or "errore sconosciuto").replace(f"{path}: ", "")
+        raise SourceError(
+            f"ffprobe non riesce a leggere '{path}': {detail}",
+            "Il file è un audio valido? Prova ad aprirlo con un player.",
+        )
     return parse_probe(json.loads(proc.stdout))
 
 

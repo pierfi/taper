@@ -167,3 +167,39 @@ def test_fetch_incomplete_download_is_not_reused(patched, tmp_path):
     shutil.rmtree(tmp_path / "abc123")
     fetch_mod.fetch("https://example.com/watch?v=abc123", tmp_path)
     assert FakeYDL.downloads == 2
+
+
+@pytest.mark.parametrize(
+    ("text", "message", "hint_part"),
+    [
+        ("ERROR: Unsupported URL: http://x", "URL non supportato", "list-extractors"),
+        ("ERROR: [generic] 'abc' is not a valid URL", "URL non valido", "https://"),
+        (
+            "ERROR: [generic] n: Unable to download webpage: HTTP Error 404: Not Found",
+            "404",
+            "indirizzo",
+        ),
+        (
+            "ERROR: <urlopen error [Errno -3] Temporary failure in name resolution>",
+            "Connessione",
+            "internet",
+        ),
+        (
+            "ERROR: [youtube] x: Private video. Sign in if you've been granted access",
+            "senza accesso",
+            "cookie",
+        ),
+        ("ERROR: [youtube] x: Video unavailable", "non disponibile", "browser"),
+        ("ERROR: [youtube] x: n challenge solving failed", "Download fallito", "yt-dlp"),
+    ],
+)
+def test_describe_download_error(text, message, hint_part):
+    msg, hint = fetch_mod.describe_download_error(text, "http://u")
+    assert message in msg and hint_part in hint
+    assert not msg.startswith("ERROR")
+
+
+def test_update_hint_only_for_unclassified_errors():
+    _, hint = fetch_mod.describe_download_error("ERROR: Unsupported URL: x", "x")
+    assert "deno" not in hint and "upgrade" not in hint
+    assert "deno" in fetch_mod.describe_download_error("ERROR: boom", "x")[1]
