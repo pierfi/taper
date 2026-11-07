@@ -8,6 +8,7 @@ from typing import Annotated
 import typer
 
 from taper import __version__
+from taper.core.progress import ProgressEvent
 from taper.errors import TaperError
 
 app = typer.Typer(
@@ -50,9 +51,43 @@ def fail(error: TaperError) -> typer.Exit:
 
 
 @app.command()
-def fetch(url: Annotated[str, typer.Argument(help="URL supportato da yt-dlp.")]) -> None:
+def fetch(
+    url: Annotated[str, typer.Argument(help="URL supportato da yt-dlp.")],
+    out: Annotated[Path, typer.Option("--out", "-o", help="Cartella radice dei download.")] = Path(
+        "taper-downloads"
+    ),
+) -> None:
     """Scarica il miglior stream audio nel codec nativo, senza ricodificare."""
-    _not_implemented("fetch")
+    from taper.core.fetch import fetch as fetch_source
+
+    last_stage = {"name": ""}
+
+    def render(event: ProgressEvent) -> None:
+        if event.stage == "download" and event.fraction is not None:
+            typer.echo(f"\r  download {event.fraction:6.1%}", nl=False, err=True)
+            last_stage["name"] = "download"
+        elif event.stage != last_stage["name"]:
+            if last_stage["name"] == "download":
+                typer.echo("", err=True)
+            if event.message:
+                typer.echo(f"  {event.message}", err=True)
+            last_stage["name"] = event.stage
+
+    try:
+        result = fetch_source(url, out, on_event=render)
+    except TaperError as error:
+        raise fail(error) from error
+
+    a = result.audio_info
+    bitrate = f"{a.bitrate // 1000} kbps" if a.bitrate else "bitrate n/d"
+    minutes, seconds = divmod(a.duration_ms // 1000, 60)
+    typer.secho(f"Scaricato: {result.info.title}", fg=typer.colors.GREEN)
+    typer.echo(f"  file:     {result.audio}")
+    typer.echo(f"  codec:    {a.codec} ({bitrate}), {minutes}:{seconds:02d}")
+    typer.echo(f"  capitoli: {len(result.info.chapters)}")
+    typer.echo(f"  sidecar:  {result.sidecar}")
+    if result.thumbnail:
+        typer.echo(f"  miniatura: {result.thumbnail}")
 
 
 @app.command()

@@ -20,6 +20,10 @@ class SourceError(TaperError):
     """Download/input problems: unsupported URL, unreadable file."""
 
 
+class CancelledError(TaperError):
+    """The operation was cancelled by the caller."""
+
+
 class InvalidPlanError(TaperError):
     """The cut plan is invalid. `problems` lists every issue found."""
 
