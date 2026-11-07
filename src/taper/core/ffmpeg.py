@@ -7,7 +7,7 @@ import re
 import shutil
 import subprocess
 import threading
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
@@ -31,6 +31,15 @@ class AudioInfo:
     channels: int | None
     format_name: str | None = None
     start_time_ms: int | None = None  # timestamp of the first packet
+
+
+def ffarg(path: Path | str) -> str:
+    """A path safe to hand to ffmpeg/ffprobe.
+
+    Absolute, so a name like `-x.opus` is not parsed as an option and `concat:a.opus` is not
+    taken for a protocol.
+    """
+    return str(Path(path).absolute())
 
 
 def find_tool(name: str) -> str:
@@ -101,66 +110,11 @@ def parse_silencedetect(stderr: str, duration_ms: int | None = None) -> list[tup
     return silences
 
 
-def detect_silences(
-    path: Path, *, noise_db: float, min_silence_s: float, duration_ms: int | None = None
-) -> list[tuple[int, int]]:
-    """Run ffmpeg silencedetect on `path`."""
-    ffmpeg = find_tool("ffmpeg")
-    proc = subprocess.run(
-        [
-            ffmpeg,
-            "-hide_banner",
-            "-nostats",
-            "-i",
-            str(path),
-            "-af",
-            f"silencedetect=noise={noise_db}dB:d={min_silence_s}",
-            "-f",
-            "null",
-            "-",
-        ],  # fmt: skip
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-    )
-    if proc.returncode != 0:
-        detail = proc.stderr.strip().splitlines()[-1:] or ["errore sconosciuto"]
-        raise SourceError(f"ffmpeg non riesce a leggere '{path}': {detail[0]}")
-    return parse_silencedetect(proc.stderr, duration_ms)
-
-
-def probe_audio(path: Path) -> AudioInfo:
-    """Run ffprobe on `path` and return its audio info."""
-    ffprobe = find_tool("ffprobe")
-    proc = subprocess.run(
-        [
-            ffprobe,
-            "-v",
-            "error",
-            "-print_format",
-            "json",
-            "-show_format",
-            "-show_streams",
-            str(path),
-        ],  # fmt: skip
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-    )
-    if proc.returncode != 0:
-        detail = (proc.stderr.strip() or "errore sconosciuto").replace(f"{path}: ", "")
-        raise SourceError(
-            f"ffprobe non riesce a leggere '{path}': {detail}",
-            "Il file è un audio valido? Prova ad aprirlo con un player.",
-        )
-    return parse_probe(json.loads(proc.stdout))
-
-
-def run_ffmpeg(args: list[str], *, cancel: threading.Event | None = None) -> None:
-    """Run ffmpeg quietly; kill it promptly if `cancel` is set. Raises on failure."""
-    cmd = [find_tool("ffmpeg"), "-hide_banner", "-nostdin", "-loglevel", "error", "-y", *args]
+def run_ffmpeg(
+    args: list[str], *, cancel: threading.Event | None = None, loglevel: str = "error"
+) -> str:
+    """Run ffmpeg; kill it promptly if `cancel` is set. Returns stderr, raises on failure."""
+    cmd = [find_tool("ffmpeg"), "-hide_banner", "-nostdin", "-loglevel", loglevel, "-y", *args]
     proc = subprocess.Popen(
         cmd,
         stdout=subprocess.DEVNULL,
@@ -181,3 +135,117 @@ def run_ffmpeg(args: list[str], *, cancel: threading.Event | None = None) -> Non
     if proc.returncode != 0:
         detail = (stderr or "").strip()[-500:] or "errore sconosciuto"
         raise SourceError(f"ffmpeg ha fallito: {detail}")
+    return stderr or ""
+
+
+def detect_silences(
+    path: Path,
+    *,
+    noise_db: float,
+    min_silence_s: float,
+    duration_ms: int | None = None,
+    cancel: threading.Event | None = None,
+) -> list[tuple[int, int]]:
+    """Run ffmpeg silencedetect on `path`."""
+    log = run_ffmpeg(
+        [
+            "-nostats",
+            "-i",
+            ffarg(path),
+            "-af",
+            f"silencedetect=noise={noise_db}dB:d={min_silence_s}",
+            "-f",
+            "null",
+            "-",
+        ],  # fmt: skip
+        cancel=cancel,
+        loglevel="info",
+    )
+    return parse_silencedetect(log, duration_ms)
+
+
+_STATS_TIME = re.compile(r"time=(\d+):(\d{2}):(\d{2}(?:\.\d+)?)")
+
+
+def parse_decode_time(log: str) -> int | None:
+    """Last `time=HH:MM:SS.xx` of an ffmpeg stats log, in ms (pure)."""
+    matches = _STATS_TIME.findall(log)
+    if not matches:
+        return None
+    h, m, sec = matches[-1]
+    return round((int(h) * 3600 + int(m) * 60 + float(sec)) * 1000)
+
+
+def measure_duration_ms(path: Path, *, cancel: threading.Event | None = None) -> int | None:
+    """Real duration by decoding the whole file (None if it cannot be determined)."""
+    log = run_ffmpeg(
+        ["-stats", "-i", ffarg(path), "-vn", "-f", "null", "-"], cancel=cancel, loglevel="info"
+    )
+    return parse_decode_time(log)
+
+
+def packet_duration_ms(path: Path) -> float | None:
+    """Longest duration among the first audio packets (the codec's real frame size)."""
+    proc = subprocess.run(
+        [
+            find_tool("ffprobe"),
+            "-v",
+            "error",
+            "-select_streams",
+            "a:0",
+            "-show_entries",
+            "packet=duration_time",
+            "-read_intervals",
+            "%+#6",
+            "-of",
+            "csv=p=0",
+            ffarg(path),
+        ],  # fmt: skip
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+    values = []
+    for line in proc.stdout.splitlines():
+        try:
+            values.append(float(line.strip().rstrip(",")) * 1000)
+        except ValueError:
+            continue
+    return max(values) if values else None
+
+
+def probe_audio(path: Path) -> AudioInfo:
+    """Run ffprobe on `path` and return its audio info.
+
+    For mp3 the container duration may be only an ESTIMATE (VBR without a Xing header makes
+    ffprobe guess from the bitrate and be off by tens of seconds), so it is measured.
+    """
+    proc = subprocess.run(
+        [
+            find_tool("ffprobe"),
+            "-v",
+            "error",
+            "-print_format",
+            "json",
+            "-show_format",
+            "-show_streams",
+            ffarg(path),
+        ],  # fmt: skip
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+    if proc.returncode != 0:
+        detail = (proc.stderr.strip() or "errore sconosciuto").replace(f"{ffarg(path)}: ", "")
+        raise SourceError(
+            f"ffprobe non riesce a leggere '{path}': {detail}",
+            "Il file è un audio valido? Prova ad aprirlo con un player.",
+        )
+    info = parse_probe(json.loads(proc.stdout))
+    if info.codec == "mp3":
+        measured = measure_duration_ms(path)
+        if measured:
+            info = replace(info, duration_ms=measured)
+    return info

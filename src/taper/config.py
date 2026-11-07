@@ -27,8 +27,17 @@ def is_windows_mount(path: Path) -> bool:
     )
 
 
+def _nearest_existing(path: Path) -> Path:
+    while not path.exists() and path != path.parent:
+        path = path.parent
+    return path
+
+
 def ensure_library_allowed(root: Path, env: Mapping[str, str] | None = None) -> None:
-    """Refuse a library on a Windows drive unless explicitly allowed."""
+    """Refuse a library on a Windows drive (unless explicitly allowed) or one we cannot write.
+
+    Checked BEFORE any download or cut, so a wrong path costs nothing.
+    """
     env = os.environ if env is None else env
     real = Path(os.path.realpath(root))
     if is_windows_mount(real) and env.get(ENV_ALLOW_WINDOWS) != "1":
@@ -36,6 +45,14 @@ def ensure_library_allowed(root: Path, env: Mapping[str, str] | None = None) -> 
             f"La libreria sarebbe su un disco Windows ({real}).",
             f"Scegli una cartella nel filesystem Linux (default: {DEFAULT_LIBRARY}); "
             f"per consentirlo davvero imposta {ENV_ALLOW_WINDOWS}=1.",
+        )
+    existing = _nearest_existing(real)
+    if existing == real and not real.is_dir():
+        raise TaperError(f"'{real}' esiste ma non è una cartella.", "Scegli un'altra --library.")
+    if not os.access(existing, os.W_OK | os.X_OK):
+        raise TaperError(
+            f"Non posso scrivere nella libreria: '{existing}' non è scrivibile.",
+            "Controlla i permessi o scegli un'altra --library.",
         )
 
 

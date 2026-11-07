@@ -93,17 +93,31 @@ def connect(root: Path, *, create: bool = True) -> Iterator[sqlite3.Connection]:
     if not create and not path.exists():
         raise TaperError(f"Nessuna libreria in '{root}'.")
     path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(path)
+    try:
+        conn = sqlite3.connect(path)
+    except sqlite3.Error as exc:
+        raise _db_error(path, exc) from exc
     try:
         conn.execute("PRAGMA foreign_keys = ON")
         _migrate(conn)
         yield conn
         conn.commit()
+    except sqlite3.Error as exc:
+        conn.rollback()
+        raise _db_error(path, exc) from exc
     except BaseException:
         conn.rollback()
         raise
     finally:
         conn.close()
+
+
+def _db_error(path: Path, exc: sqlite3.Error) -> TaperError:
+    return TaperError(
+        f"Errore del database della libreria ({path}): {exc}",
+        "Il file potrebbe essere danneggiato o bloccato da un altro programma. "
+        "Non cancellarlo: contiene il catalogo; fanne prima una copia.",
+    )
 
 
 def _migrate(conn: sqlite3.Connection) -> None:
@@ -121,7 +135,10 @@ def _migrate(conn: sqlite3.Connection) -> None:
 
 
 def find_source(root: Path, source_hash: str) -> ExistingSource | None:
-    """The source already registered with this hash, if any."""
+    """The source already registered with this hash AND still present on disk, if any.
+
+    Rows whose files were deleted by hand do not count: they must not block a new export.
+    """
     if not db_path(root).exists():
         return None
     with connect(root) as conn:
@@ -130,10 +147,24 @@ def find_source(root: Path, source_hash: str) -> ExistingSource | None:
         ).fetchone()
         if row is None:
             return None
-        count, first = conn.execute(
-            "SELECT COUNT(*), MIN(path) FROM tracks WHERE source_id = ?", (row[0],)
-        ).fetchone()
-        return ExistingSource(row[1], row[2], count, first)
+        paths = [
+            r[0]
+            for r in conn.execute(
+                "SELECT path FROM tracks WHERE source_id = ? ORDER BY path", (row[0],)
+            )
+        ]
+    present = [p for p in paths if (root / p).exists()]
+    if not present:
+        return None
+    return ExistingSource(row[1], row[2], len(present), present[0])
+
+
+def _purge_missing(conn: sqlite3.Connection, root: Path) -> None:
+    """Forget tracks whose files no longer exist (and sources left without tracks)."""
+    for track_id, path in conn.execute("SELECT id, path FROM tracks").fetchall():
+        if not (root / path).exists():
+            conn.execute("DELETE FROM tracks WHERE id = ?", (track_id,))
+    conn.execute("DELETE FROM sources WHERE id NOT IN (SELECT DISTINCT source_id FROM tracks)")
 
 
 def register(root: Path, source: SourceRecord, tracks: list[Track]) -> None:
@@ -145,6 +176,12 @@ def register(root: Path, source: SourceRecord, tracks: list[Track]) -> None:
     """
     now = _now()
     with connect(root) as conn:
+        # Stale rows must not collide with the new ones: rows whose files are gone, and rows
+        # with the same path as a track we are registering now (the album folder is always
+        # created fresh, so an old row with that path belongs to a folder deleted by hand).
+        _purge_missing(conn, root)
+        conn.executemany("DELETE FROM tracks WHERE path = ?", [(t.path,) for t in tracks])
+        conn.execute("DELETE FROM sources WHERE id NOT IN (SELECT DISTINCT source_id FROM tracks)")
         row = conn.execute("SELECT id FROM sources WHERE hash = ?", (source.hash,)).fetchone()
         if row:  # same source exported again (--allow-duplicate): attach the new tracks to it
             source_id = row[0]

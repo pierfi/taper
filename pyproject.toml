@@ -5,8 +5,8 @@ description = "Scarica audio (yt-dlp), dividilo in brani, taggalo e archivialo i
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-    "typer>=0.12",
-    "yt-dlp",
+    "typer>=0.28",
+    "yt-dlp[default]",
     "mutagen>=1.47",
     "Pillow>=10",
     "PyYAML>=6",

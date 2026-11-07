@@ -37,12 +37,12 @@ def sanitize_component(
     text = unicodedata.normalize("NFC", name)
     text = _FORBIDDEN.sub("_", text)
     text = _WHITESPACE.sub(" ", text).strip()
-    text = _truncate_bytes(text, max_bytes).rstrip(" .")
+    text = _truncate_bytes(text, max_bytes).strip(" .")
     if not text:
         return fallback
     if text.split(".")[0].upper() in _RESERVED:
         text = "_" + text
-        text = _truncate_bytes(text, max_bytes).rstrip(" .")
+        text = _truncate_bytes(text, max_bytes).strip(" .")
     return text
 
 
@@ -80,7 +80,7 @@ def create_unique_dir(path: Path) -> Path:
         else:
             suffix = f" ({n})"
             room = MAX_COMPONENT_BYTES - len(suffix.encode("utf-8"))
-            candidate = path.with_name(_truncate_bytes(path.name, room).rstrip(" .") + suffix)
+            candidate = path.with_name(_truncate_bytes(path.name, room).strip(" .") + suffix)
         try:
             candidate.mkdir()
             return candidate

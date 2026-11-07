@@ -191,3 +191,78 @@ def test_plan_command_overrides(fake_source, tmp_path):
     assert r.exit_code == 0, r.output
     text = (tmp_path / "p.yaml").read_text(encoding="utf-8")
     assert 'artist: "A"' in text and 'album: "B"' in text and "year: 2001" in text
+
+
+# ------------------------------------------------ errors and cover (Opus review)
+
+
+def _locked_dir(tmp_path):
+    import os
+
+    if os.geteuid() == 0:
+        pytest.skip("root can write anywhere")
+    locked = tmp_path / "locked"
+    locked.mkdir()
+    locked.chmod(0o500)
+    return locked
+
+
+def test_unwritable_library_fails_before_downloading(fake_source, tmp_path):
+    locked = _locked_dir(tmp_path)
+    try:
+        r = run("--yes", "-l", str(locked / "lib"))
+        assert r.exit_code == 1 and "scrivibile" in r.output
+        assert "Traceback" not in r.output and fake_source.calls == []  # nothing was fetched
+    finally:
+        locked.chmod(0o700)
+
+
+def test_unwritable_output_folder_is_a_clean_error(fake_source, tmp_path):
+    locked = _locked_dir(tmp_path)
+    plan_path = fake_source.audio.with_name("p.yaml")
+    from taper.core.plan import save_plan
+
+    save_plan(_plan_for_cut(), plan_path)
+    try:
+        r = runner.invoke(
+            app,
+            ["cut", str(fake_source.audio), "--plan", str(plan_path), "--no-library",
+             "-o", str(locked / "tracks")],
+        )  # fmt: skip
+        assert r.exit_code == 1 and "Errore di accesso ai file" in r.output
+        assert "Traceback" not in r.output
+    finally:
+        locked.chmod(0o700)
+
+
+def _plan_for_cut():
+    from taper.models import AlbumMeta, CutPlan, Segment
+
+    return CutPlan(
+        "source.opus",
+        AlbumMeta("A", "B", 2000),
+        [Segment(0, 15_000, "One"), Segment(15_000, 40_000, "Two")],
+    )
+
+
+def test_no_library_still_writes_cover_jpg_next_to_tracks(fake_source):
+    r = run("--yes", "--no-library")
+    assert r.exit_code == 0, r.output
+    cover = fake_source.workdir / "tracks" / "cover.jpg"
+    assert cover.exists() and "Copertina:" in r.output
+    # a second run must not clobber it (never overwrite), and must not crash on it
+    before = cover.read_bytes()
+    again = run("--yes", "--no-library", "--force")
+    assert again.exit_code == 0 and cover.read_bytes() == before
+
+
+def test_library_export_removed_by_hand_can_be_exported_again(fake_source, tmp_path):
+    """Opus review: delete the album folder, run again -> no 'already in library' / traceback."""
+    import shutil
+
+    lib = tmp_path / "lib"
+    assert run("--yes", "-l", str(lib)).exit_code == 0
+    shutil.rmtree(next((lib / "Fan channel").iterdir()))  # the user deletes the album folder
+    again = run("--yes", "-l", str(lib))
+    assert again.exit_code == 0, again.output
+    assert "Traceback" not in again.output and len(list_tracks(lib)) == 2

@@ -87,7 +87,8 @@ def test_cut_precision_and_original_untouched(source, tmp_path):
 
     assert sha(source) == before  # never modifies the original
     assert len(results) == 3
-    expected = [10_123, 23_333, 26_544]
+    real_end = min(60_000, probe_audio(source).duration_ms)  # mp3: measured by decoding
+    expected = [10_123, 23_333, real_end - 33_456]
     profile = profile_for(probe_audio(source).codec)
     tol = tolerance_ms(profile, 48000) + (30 if profile.lossless else 0)
     for r, want in zip(results, expected, strict=True):
@@ -108,6 +109,8 @@ def test_modes_by_codec(source, tmp_path):
         assert not any(r.reencoded for r in results)  # lossless -> flac is not a quality loss
     else:
         assert {r.mode for r in results} <= {MODE_COPY, MODE_REENCODE}
+        if codec in ("opus", "aac"):  # these must never need a re-encode on this material
+            assert {r.mode for r in results} == {MODE_COPY}, [r.warnings for r in results]
         for r in results:
             assert r.reencoded == (r.mode == MODE_REENCODE)
             assert bool(r.warnings) == r.reencoded

@@ -115,5 +115,5 @@ def export_to_library(
         r.path.unlink(missing_ok=True)
     with contextlib.suppress(OSError):  # staging folder may hold other files: then leave it
         results[0].path.parent.rmdir()
-    emit(on_event, ProgressEvent("done", 1.0, "Export completato"))
+    emit(on_event, ProgressEvent("export_done", 1.0, "Export completato"))
     return ExportResult(album_dir, tracks, cover_path)

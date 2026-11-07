@@ -8,16 +8,27 @@ Strategy (the point of the tool is to NOT lose quality):
   and loses nothing.
 
 Seeking uses the OUTPUT-side `-ss` (after `-i`): with stream copy the input-side variant
-starts at the previous container page and can begin hundreds of ms early.
+starts at the previous container page and can begin hundreds of ms early. `-ss` is omitted for
+segments starting at 0 (with it ffmpeg drops the first packet).
+
+Known limit: a stream-copied cut is accurate to the codec frame (about 20 ms for opus), and
+every Opus segment keeps the source's pre-skip (312 samples, ~6.5 ms) which decoders discard,
+so copied tracks are NOT sample-exact gapless. Lossless sources (FLAC output) are.
+
+All tracks are produced in a temporary folder inside the output folder and moved into place
+only when every segment succeeded, so a failure leaves nothing behind.
 """
 
 from __future__ import annotations
 
+import os
+import shutil
+import tempfile
 import threading
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
-from taper.core.ffmpeg import AudioInfo, probe_audio, run_ffmpeg
+from taper.core.ffmpeg import AudioInfo, ffarg, packet_duration_ms, probe_audio, run_ffmpeg
 from taper.core.naming import track_filename
 from taper.core.plan import ensure_valid
 from taper.core.progress import ProgressCallback, ProgressEvent, check_cancelled, emit
@@ -63,11 +74,19 @@ def profile_for(codec: str) -> CodecProfile:
     )
 
 
-def tolerance_ms(profile: CodecProfile, sample_rate: int | None) -> float:
+def tolerance_ms(
+    profile: CodecProfile, sample_rate: int | None, packet_ms: float | None = None
+) -> float:
+    """Allowed deviation of a stream-copied cut: 2 codec frames.
+
+    `packet_ms` is the real packet size measured on the source (Opus may use 40/60 ms frames).
+    """
     if profile.frame_samples and sample_rate:
         frame = profile.frame_samples / sample_rate * 1000
     else:
         frame = profile.frame_ms or 20.0
+    if packet_ms:
+        frame = max(frame, packet_ms)
     return TOLERANCE_FRAMES * frame
 
 
@@ -95,28 +114,30 @@ class CutResult:
         return self.mode == MODE_REENCODE
 
 
-def _tmp_path(target: Path) -> Path:
+def _part_name(name: str) -> str:
     # Keep the real extension last so ffmpeg picks the right muxer.
-    return target.with_name(f"{target.stem}.part{target.suffix}")
+    stem, dot, ext = name.rpartition(".")
+    return f"{stem}.part.{ext}" if dot else f"{name}.part"
 
 
 def _times(start_ms: int, end_ms: int) -> list[str]:
-    return ["-ss", f"{start_ms / 1000:.3f}", "-t", f"{(end_ms - start_ms) / 1000:.3f}"]
+    seek = ["-ss", f"{start_ms / 1000:.3f}"] if start_ms > 0 else []
+    return [*seek, "-t", f"{(end_ms - start_ms) / 1000:.3f}"]
 
 
 def _base_args(source: Path, start_ms: int, end_ms: int) -> list[str]:
     # -ss AFTER -i (see module docstring); drop video/cover, source tags and chapters.
-    return ["-i", str(source), *_times(start_ms, end_ms), "-map", "0:a:0", "-vn",
+    return ["-i", ffarg(source), *_times(start_ms, end_ms), "-map", "0:a:0", "-vn",
             "-map_metadata", "-1", "-map_chapters", "-1"]  # fmt: skip
 
 
-def _run_to(target: Path, args: list[str], cancel: threading.Event | None) -> AudioInfo:
-    """Run ffmpeg into a temp file, probe it, and only then move it to `target`."""
-    tmp = _tmp_path(target)
+def _encode(work: Path, name: str, args: list[str], cancel: threading.Event | None) -> AudioInfo:
+    """Run ffmpeg into `work/<name>.part.ext`, probe it, then rename to `work/<name>`."""
+    tmp = work / _part_name(name)
     try:
-        run_ffmpeg([*args, str(tmp)], cancel=cancel)
+        run_ffmpeg([*args, ffarg(tmp)], cancel=cancel)
         info = probe_audio(tmp)
-        tmp.replace(target)
+        tmp.replace(work / name)
         return info
     finally:
         tmp.unlink(missing_ok=True)
@@ -126,41 +147,52 @@ def _cut_one(
     source: Path,
     src: AudioInfo,
     profile: CodecProfile,
+    tol_ms: float,
     index: int,
     seg: Segment,
     end_ms: int,
-    target: Path,
+    work: Path,
+    name: str,
     cancel: threading.Event | None,
 ) -> CutResult:
     base = _base_args(source, seg.start_ms, end_ms)
     expected = end_ms - seg.start_ms
+    final = work / name
 
     if profile.lossless:
-        info = _run_to(target, [*base, "-c:a", "flac"], cancel)
-        return CutResult(index, seg, target, MODE_LOSSLESS, info)
+        info = _encode(work, name, [*base, "-c:a", "flac"], cancel)
+        warnings = ()
+        if src.codec.startswith("pcm_f"):  # float PCM has more precision than FLAC can store
+            warnings = (
+                f"Segmento {index} ('{seg.title}'): la sorgente è PCM float, FLAC la "
+                "memorizza a 24 bit: possibile minima perdita di precisione.",
+            )
+        return CutResult(index, seg, final, MODE_LOSSLESS, info, warnings)
 
     # 1) stream copy into a temp file, verified before it is kept
-    tmp = _tmp_path(target)
+    tmp = work / _part_name(name)
     reason: str | None = None
     try:
-        run_ffmpeg([*base, "-c:a", "copy", str(tmp)], cancel=cancel)
+        run_ffmpeg([*base, "-c:a", "copy", ffarg(tmp)], cancel=cancel)
         info = probe_audio(tmp)
-        reason = copy_deviation(expected, info, tolerance_ms(profile, src.sample_rate))
+        reason = copy_deviation(expected, info, tol_ms)
         if reason is None:
-            tmp.replace(target)
-            return CutResult(index, seg, target, MODE_COPY, info)
+            tmp.replace(final)
+            return CutResult(index, seg, final, MODE_COPY, info)
+    except SourceError as exc:  # empty/unreadable copy (e.g. a very short segment): fall back
+        reason = f"copia non riuscita: {exc.message.splitlines()[0]}"
     finally:
         tmp.unlink(missing_ok=True)
 
     # 2) not precise: re-encode ONLY this segment with the same codec, and say so
     bitrate = src.bitrate or DEFAULT_BITRATE
-    info = _run_to(target, [*base, "-c:a", profile.encoder, "-b:a", str(bitrate)], cancel)
+    info = _encode(work, name, [*base, "-c:a", profile.encoder, "-b:a", str(bitrate)], cancel)
     warning = (
         f"Segmento {index} ('{seg.title}'): taglio senza ricodifica non preciso ({reason}); "
         f"ricodificato con {profile.encoder} a {bitrate // 1000} kbps: "
         "piccola perdita di qualità."
     )
-    return CutResult(index, seg, target, MODE_REENCODE, info, (warning,))
+    return CutResult(index, seg, final, MODE_REENCODE, info, (warning,))
 
 
 def cut_plan(
@@ -172,10 +204,12 @@ def cut_plan(
     on_event: ProgressCallback | None = None,
     cancel: threading.Event | None = None,
 ) -> list[CutResult]:
-    """Cut `source` into `out_dir/NN - Title.ext` following `plan`."""
+    """Cut `source` into `out_dir/NN - Title.ext` following `plan` (all or nothing)."""
     src = probe_audio(source)
     ensure_valid(plan, src.duration_ms)
     profile = profile_for(src.codec)
+    packet_ms = None if profile.lossless else packet_duration_ms(source)
+    tol_ms = tolerance_ms(profile, src.sample_rate, packet_ms)
     total = len(plan.segments)
 
     targets = [
@@ -196,11 +230,21 @@ def cut_plan(
         )
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    results: list[CutResult] = []
-    for i, (seg, target) in enumerate(zip(plan.segments, targets, strict=True), start=1):
-        check_cancelled(cancel)
-        emit(on_event, ProgressEvent("cut", (i - 1) / total, f"{i}/{total} {seg.title}"))
-        end_ms = min(seg.end_ms, src.duration_ms)
-        results.append(_cut_one(source, src, profile, i, seg, end_ms, target, cancel))
-    emit(on_event, ProgressEvent("done", 1.0, "Taglio completato"))
+    work = Path(tempfile.mkdtemp(prefix=".taper-cut-", dir=out_dir))
+    try:
+        produced: list[CutResult] = []
+        for i, (seg, target) in enumerate(zip(plan.segments, targets, strict=True), start=1):
+            check_cancelled(cancel)
+            emit(on_event, ProgressEvent("cut", (i - 1) / total, f"{i}/{total} {seg.title}"))
+            end_ms = min(seg.end_ms, src.duration_ms)
+            produced.append(
+                _cut_one(source, src, profile, tol_ms, i, seg, end_ms, work, target.name, cancel)
+            )
+        results = []
+        for r, target in zip(produced, targets, strict=True):  # commit: move into place
+            os.replace(r.path, target)
+            results.append(replace(r, path=target))
+    finally:
+        shutil.rmtree(work, ignore_errors=True)  # nothing is left behind on failure
+    emit(on_event, ProgressEvent("cut_done", 1.0, "Taglio completato"))
     return results

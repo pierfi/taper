@@ -312,3 +312,27 @@ def test_album_override_wins_and_drops_matching_notes():
     partial = generate_plan(Path("a.opus"), info, DURATION, album_override=AlbumMeta(artist="Me"))
     assert partial.plan.album.artist == "Me" and partial.plan.album.year == 2024
     assert len(partial.notes) == 2  # the artist note is gone, year/album notes remain
+
+
+def test_too_short_segment_is_invalid():
+    plan = CutPlan("a", segments=[Segment(0, 10, "tiny"), Segment(10, 20_000, "ok")])
+    problems = validate_plan(plan)
+    assert len(problems) == 1 and "troppo breve" in problems[0] and "segmento 1" in problems[0]
+
+
+@pytest.mark.parametrize("value", [".inf", "inf", "-.inf", ".nan"])
+def test_load_plan_rejects_infinite_times(tmp_path, value):
+    path = tmp_path / "p.yaml"
+    segment = f'  - {{start: {value}, end: 5, title: "A"}}'
+    path.write_text(f'version: 1\nsource_file: "a.opus"\nsegments:\n{segment}\n', encoding="utf-8")
+    with pytest.raises(InvalidPlanError) as exc:
+        load_plan(path)
+    assert "segmento 1" in "\n".join(exc.value.problems)
+
+
+def test_yaml_roundtrip_non_portable_characters(tmp_path):
+    title = "a\x7fb\x85c\x9fd e﻿f\ttab"
+    plan = CutPlan("a.opus", AlbumMeta("x\x85y", None, None), [Segment(0, 1000, title)])
+    path = save_plan(plan, tmp_path / "p.yaml")
+    loaded = load_plan(path)
+    assert loaded.segments[0].title == title and loaded.album.artist == "x\x85y"

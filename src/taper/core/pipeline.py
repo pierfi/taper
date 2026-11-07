@@ -7,9 +7,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from taper.config import ensure_library_allowed
-from taper.core.cover import CoverImage, find_cover_source, make_square_cover
+from taper.core.cover import CoverImage, find_cover_source, make_square_cover, save_cover_jpg
 from taper.core.cut import CutResult, cut_plan
-from taper.core.export import ExportResult, export_to_library
+from taper.core.export import COVER_FILENAME, ExportResult, export_to_library
 from taper.core.fetch import FetchResult
 from taper.core.fetch import fetch as fetch_source
 from taper.core.library import file_sha256, find_source
@@ -66,7 +66,7 @@ def cut_and_tag(
             ProgressEvent("tag", (r.index - 1) / total, f"{r.index}/{total} {r.segment.title}"),
         )
         write_tags(r.path, tags_for_plan(plan, r.index), cover)
-    emit(on_event, ProgressEvent("done", 1.0, "Tag scritti"))
+    emit(on_event, ProgressEvent("tag_done", 1.0, "Tag scritti"))
     return CutAndTagResult(results, cover, notes)
 
 
@@ -76,6 +76,7 @@ class ApplyResult:
     cover: CoverImage | None
     notes: list[str]
     export: ExportResult | None = None  # None when no library was requested
+    cover_path: Path | None = None  # the cover.jpg written next to the tracks / in the album
 
 
 def check_duplicate(source: Path, library: Path, *, allow_duplicate: bool = False) -> str:
@@ -127,7 +128,17 @@ def apply_plan(
             source_hash=source_hash, source_title=info.title if info else source.stem,
             info=info, cover=outcome.cover, on_event=on_event, cancel=cancel,
         )  # fmt: skip
-    return ApplyResult(outcome.results, outcome.cover, outcome.notes, export)
+    if export is not None:
+        cover_path = export.cover
+    elif outcome.cover is not None:
+        # No library: still leave a cover.jpg next to the tracks (never overwriting one).
+        cover_path = staging_dir / COVER_FILENAME
+        if not cover_path.exists():
+            save_cover_jpg(outcome.cover, cover_path)
+    else:
+        cover_path = None
+    emit(on_event, ProgressEvent("done", 1.0, "Fatto"))
+    return ApplyResult(outcome.results, outcome.cover, outcome.notes, export, cover_path)
 
 
 @dataclass
@@ -170,6 +181,7 @@ def prepare(
             plan.album = apply_album_override(plan.album, album_override)
             save_plan(plan, plan_path, overwrite=True)
             notes.append("Artista/album/anno forniti da riga di comando applicati al piano.")
+        emit(on_event, ProgressEvent("prepared", 1.0, "Piano pronto"))
         return Prepared(fetched, plan, plan_path, "existing", notes)
 
     result = generate_plan(
@@ -178,6 +190,8 @@ def prepare(
         fetched.audio_info.duration_ms,
         options,
         album_override=album_override,
+        cancel=cancel,
     )
     save_plan(result.plan, plan_path, result.notes)
+    emit(on_event, ProgressEvent("prepared", 1.0, "Piano pronto"))
     return Prepared(fetched, result.plan, plan_path, result.source, result.notes)

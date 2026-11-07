@@ -12,8 +12,8 @@ from dataclasses import dataclass
 _TIME = r"(?<![\d:])\d{1,3}:\d{2}(?::\d{2})?(?!\d|:\d)"
 _OPEN = r"[\[(]?"
 _CLOSE = r"[\])]?"
-_BULLET = r"[\s•·*>\-–—]*"
-_NUMBERING = r"(?:\d{1,3}[.)]\s+)?"
+_BULLET = r"[^\w\[(]*"  # any run of bullets/emoji/symbols/spaces before the time
+_NUMBERING = r"(?:#?\d{1,3}[.)]?\s+)?"
 _SEP = r"[\s\-–—:|~>]*"
 
 _RANGE_RE = re.compile(
@@ -26,6 +26,7 @@ _LEADING_RE = re.compile(
 _TRAILING_RE = re.compile(rf"^(?P<title>.*?\S)\s*[-–—:|~(\[]*\s*(?P<t1>{_TIME}){_CLOSE}\s*$")
 _STARTS_WITH_TIME = re.compile(rf"^{_OPEN}{_TIME}")
 
+_LIST_NUMBER = re.compile(r"^(?:#\d{1,3}[.)]?|\d{1,3}[.)])\s+")
 _DECORATION = " \t-–—:|~>*•·"
 
 
@@ -61,7 +62,7 @@ def parse_time(text: str) -> int:
         for i in ints:
             total = total * 60 + i
         return round((total * 60 + seconds) * 1000)
-    except ValueError:
+    except (ValueError, OverflowError):  # OverflowError: "inf"
         raise ValueError(f"tempo non valido: {text!r}") from None
 
 
@@ -119,7 +120,8 @@ def _scan(lines: list[str], style: str) -> list[TimestampEntry]:
             start = _safe_time(m["t1"])
             if start is None:
                 continue
-            entries.append(TimestampEntry(start, None, _clean_title(m["title"])))
+            title = _LIST_NUMBER.sub("", _clean_title(m["title"]))
+            entries.append(TimestampEntry(start, None, title))
     return _keep_increasing(entries)
 
 

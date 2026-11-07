@@ -69,6 +69,26 @@ def test_windows_drive_refused_unless_allowed():
         ensure_library_allowed(Path("/mnt/c/anything"), {})
 
 
+def test_unwritable_library_is_refused_early(tmp_path):
+    import os
+
+    if os.geteuid() == 0:
+        pytest.skip("root can write anywhere")
+    locked = tmp_path / "locked"
+    locked.mkdir()
+    locked.chmod(0o500)
+    try:
+        with pytest.raises(TaperError) as exc:
+            ensure_library_allowed(locked / "lib", {})
+        assert "scrivibile" in exc.value.message
+    finally:
+        locked.chmod(0o700)
+    afile = tmp_path / "afile"
+    afile.write_text("x")
+    with pytest.raises(TaperError):
+        ensure_library_allowed(afile, {})
+
+
 # ----------------------------------------------------------------------- naming
 
 
@@ -97,9 +117,17 @@ def _track(path="A/2020 - X/01 - One.opus", **kw):
     return Track(**base)
 
 
+def _touch(root, *tracks):
+    for t in tracks:
+        f = root / t.path
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_bytes(b"x")
+
+
 def test_register_and_list_roundtrip(tmp_path):
     record = SourceRecord("h1", "Video", "http://u", "chan", "20240101")
     tracks = [_track(), _track("A/2020 - X/02 - Two.opus", title="Two", number=2, reencoded=True)]
+    _touch(tmp_path, *tracks)
     register(tmp_path, record, tracks)
     assert list_tracks(tmp_path) == tracks
     existing = find_source(tmp_path, "h1")
@@ -128,20 +156,58 @@ def test_newer_schema_refused(tmp_path):
 
 
 def test_register_same_source_again_adds_tracks(tmp_path):
-    register(tmp_path, SourceRecord("h1", "T"), [_track()])
-    register(tmp_path, SourceRecord("h1", "T"), [_track("B/2020 - X/01 - One.opus")])
+    first, second = _track(), _track("B/2020 - X/01 - One.opus")
+    _touch(tmp_path, first, second)
+    register(tmp_path, SourceRecord("h1", "T"), [first])
+    register(tmp_path, SourceRecord("h1", "T"), [second])
     assert len(list_tracks(tmp_path)) == 2
     assert find_source(tmp_path, "h1").track_count == 2
 
 
 def test_register_is_all_or_nothing(tmp_path):
-    register(tmp_path, SourceRecord("h1", "T"), [_track()])
-    with pytest.raises(sqlite3.IntegrityError):  # duplicate path inside one batch
-        register(tmp_path, SourceRecord("h2", "T"), [_track("Z/a.opus"), _track("Z/a.opus")])
-    with pytest.raises(sqlite3.IntegrityError):  # path already taken by another source
-        register(tmp_path, SourceRecord("h3", "T"), [_track("A/2020 - X/01 - One.opus")])
-    assert [t.path for t in list_tracks(tmp_path)] == ["A/2020 - X/01 - One.opus"]
-    assert find_source(tmp_path, "h2") is None and find_source(tmp_path, "h3") is None
+    one = _track()
+    _touch(tmp_path, one)
+    register(tmp_path, SourceRecord("h1", "T"), [one])
+    dup = _track("Z/a.opus")
+    _touch(tmp_path, dup)
+    with pytest.raises(TaperError):  # duplicate path inside one batch
+        register(tmp_path, SourceRecord("h2", "T"), [dup, dup])
+    assert [t.path for t in list_tracks(tmp_path)] == [one.path]
+    assert find_source(tmp_path, "h2") is None
+
+
+def test_files_deleted_by_hand_do_not_block_a_new_export(tmp_path):
+    """Opus review: delete an album folder, re-run -> must not be 'already in library'/crash."""
+    tracks = [_track(), _track("A/2020 - X/02 - Two.opus", title="Two", number=2)]
+    _touch(tmp_path, *tracks)
+    register(tmp_path, SourceRecord("h1", "T"), tracks)
+    assert find_source(tmp_path, "h1") is not None
+
+    for t in tracks:  # the user removes the folder
+        (tmp_path / t.path).unlink()
+    assert find_source(tmp_path, "h1") is None  # no longer blocks
+
+    _touch(tmp_path, *tracks)  # same folder/paths are created again
+    register(tmp_path, SourceRecord("h1", "T"), tracks)  # no UNIQUE constraint crash
+    assert [t.path for t in list_tracks(tmp_path)] == [t.path for t in tracks]
+    assert find_source(tmp_path, "h1").track_count == 2
+
+
+def test_partially_deleted_source_still_counts_remaining_files(tmp_path):
+    tracks = [_track(), _track("A/2020 - X/02 - Two.opus", title="Two", number=2)]
+    _touch(tmp_path, *tracks)
+    register(tmp_path, SourceRecord("h1", "T"), tracks)
+    (tmp_path / tracks[0].path).unlink()
+    existing = find_source(tmp_path, "h1")
+    assert existing and existing.track_count == 1 and existing.first_path == tracks[1].path
+
+
+def test_database_errors_become_taper_errors(tmp_path):
+    (tmp_path / ".taper").mkdir()
+    (tmp_path / ".taper" / "library.db").write_bytes(b"this is not an sqlite database" * 20)
+    with pytest.raises(TaperError) as exc:
+        list_tracks(tmp_path)
+    assert "database" in exc.value.message and "copia" in (exc.value.hint or "")
 
 
 def test_file_sha256(tmp_path):

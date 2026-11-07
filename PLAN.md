@@ -34,7 +34,7 @@ tests/
 - **`validate_plan()` ritorna tutti gli errori** con indice del segmento (la UI modificherà lo stesso CutPlan).
 - **Una workdir per sorgente** (audio, `<stem>.taper.json` ridotto e versionato, miniatura, `plan.yaml`, `tracks/`).
 - **Sorgenti locali senza sidecar**: `SourceInfo` opzionale; chiave di idempotenza = hash file, non URL.
-- **Taglio**: sorgente lossless → ricodifica FLAC (campione-preciso); lossy → `-ss` prima di `-i` + `-t` in copy, verifica durata/start con tolleranza 2 frame del codec (opus 20 ms, aac 1024/sr, mp3 1152/sr), altrimenti ricodifica del solo segmento + warning. Flag `reencoded` salvato in DB. Segmenti contigui di default (gapless). Scrittura su `.part` poi rename.
+- **Taglio**: sorgente lossless → ricodifica FLAC (campione-preciso); lossy → `-ss` prima di `-i` + `-t` in copy, verifica durata/start con tolleranza 2 frame del codec (opus 20 ms, aac 1024/sr, mp3 1152/sr), altrimenti ricodifica del solo segmento + warning. Flag `reencoded` salvato in DB. Segmenti contigui di default (non gapless al campione con lo stream copy: vedi README). Scrittura su `.part` poi rename.
 - **Remux webm→opus** delegato al postprocessor `FFmpegExtractAudio` di yt-dlp (senza codec forzato).
 - **Metadati**: sezione `album:` (artist, album, year) nel YAML; default artist→creator→uploader; anno/artista evidenziati in review (l'upload date ≠ data del concerto).
 - **Silencedetect**: fallback minimo (soglie + durata minima); se nulla, un solo segmento.
@@ -71,3 +71,28 @@ tests/
   percorsi `/mnt/<lettera>/` salvo `TAPER_ALLOW_WINDOWS_PATHS=1`.
 - Cattura del bug di seek: `-ss` va messo DOPO `-i` nello stream copy (altrimenti l'inizio
   può anticipare di centinaia di ms senza che la durata lo riveli).
+
+## Revisione finale di Opus (correzioni applicate)
+
+Alta/media gravità, verificate e corrette, ognuna con test:
+- `fetch` ricodificava in silenzio in mp3 i codec sconosciuti a yt-dlp (ac3...): ora remux in
+  copia fatto da taper, con errore chiaro per i codec non conservabili.
+- DB incoerente se una cartella veniva cancellata a mano (blocco o IntegrityError): le righe
+  orfane vengono ignorate e ripulite; gli errori SQLite diventano messaggi chiari.
+- `cut`: `-ss 0` perdeva il primo pacchetto opus; tolleranza ora basata sui pacchetti reali;
+  copia vuota/fallita ripiega sulla ricodifica; output in cartella temporanea con rollback;
+  segmenti < 100 ms rifiutati; durata reale (decodificata) per gli mp3 senza header Xing.
+- Errori di permessi/`OSError`, `.inf` nel YAML, libreria non scrivibile: messaggi chiari, e il
+  controllo della libreria avviene prima di scaricare o tagliare.
+- Regex della descrizione (emoji, `▶`, `#1`, numerazione in coda), caratteri di controllo nel
+  YAML, nomi con punti iniziali (cartelle nascoste), argomenti che iniziano con `-` per ffmpeg.
+- `cover.jpg` ora scritto anche con `--no-library`; eventi di fine fase distinti.
+- Packaging: `typer>=0.28`, `yt-dlp[default]`.
+
+Limiti noti, non corretti:
+- Opus copiato non è gapless al campione (pre-skip ~6,5 ms per segmento). Correggerlo richiede
+  di riscrivere l'OpusHead (e il CRC della pagina Ogg) a ogni brano: valutato troppo rischioso
+  per il guadagno; documentato nel README.
+- Download e registrazione non sono atomici tra processi concorrenti (un solo utente per ora).
+- I risultati (`CutResult`, `FetchResult`, `AudioInfo`) non hanno ancora `to_dict`.
+- Non verificati: Windows nativo/NTFS (collisioni case-insensitive, MAX_PATH).

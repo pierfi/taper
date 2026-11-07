@@ -93,6 +93,15 @@ def fail(error: TaperError) -> typer.Exit:
     return typer.Exit(code=1)
 
 
+def os_error(error: OSError) -> TaperError:
+    """A file-system failure (permissions, full disk, missing folder...) as a clear message."""
+    where = f" ({error.filename})" if error.filename else ""
+    return TaperError(
+        f"Errore di accesso ai file: {error.strerror or error}{where}",
+        "Controlla permessi, spazio su disco e che le cartelle indicate esistano.",
+    )
+
+
 # ------------------------------------------------------------------------ helpers
 
 
@@ -102,6 +111,12 @@ def _progress_renderer() -> Callable[[ProgressEvent], None]:
     state = {"stage": ""}
 
     def render(event: ProgressEvent) -> None:
+        if event.stage == "warning":
+            if state["stage"] == "download":
+                typer.echo("", err=True)
+                state["stage"] = ""
+            typer.secho(f"  ! {event.message}", fg=typer.colors.YELLOW, err=True)
+            return
         if event.stage == "download" and event.fraction is not None:
             typer.echo(f"\r  download {event.fraction:6.1%}", nl=False, err=True)
             state["stage"] = "download"
@@ -163,8 +178,8 @@ def _print_apply(outcome: ApplyResult, target_dir: Path, library_root: Path | No
     if outcome.export and library_root:
         typer.echo(f"Libreria: {library_root}")
         typer.echo(f"Database: {db_path(library_root)}")
-        if outcome.export.cover:
-            typer.echo(f"Copertina: {outcome.export.cover.name}")
+    if outcome.cover_path:
+        typer.echo(f"Copertina: {outcome.cover_path}")
     for note in outcome.notes:
         typer.secho(f"  ! {note}", fg=typer.colors.YELLOW)
 
@@ -263,6 +278,8 @@ def fetch(
         result = fetch_source(url, out, on_event=_progress_renderer())
     except TaperError as error:
         raise fail(error) from error
+    except OSError as error:
+        raise fail(os_error(error)) from error
 
     a = result.audio_info
     bitrate = f"{a.bitrate // 1000} kbps" if a.bitrate else "bitrate n/d"
@@ -313,6 +330,8 @@ def plan(
         save_plan(result.plan, target, result.notes, overwrite=force)
     except TaperError as error:
         raise fail(error) from error
+    except OSError as error:
+        raise fail(os_error(error)) from error
 
     typer.secho(
         f"Piano creato da '{result.source}': {len(result.plan.segments)} segmenti",
@@ -367,6 +386,8 @@ def cut(
         )
     except TaperError as error:
         raise fail(error) from error
+    except OSError as error:
+        raise fail(os_error(error)) from error
     _print_apply(outcome, target_dir, library_root)
 
 
@@ -443,4 +464,6 @@ def run(
         )
     except TaperError as error:
         raise fail(error) from error
+    except OSError as error:
+        raise fail(os_error(error)) from error
     _print_apply(outcome, staging, library_root)

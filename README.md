@@ -26,9 +26,10 @@ Principio guida: **non ricodificare mai se non serve**, e dirlo ogni volta che s
 - [uv](https://docs.astral.sh/uv/) — `curl -LsSf https://astral.sh/uv/install.sh | sh`
 - **ffmpeg e ffprobe nel PATH**: `sudo apt install ffmpeg` (Debian/Ubuntu/WSL),
   `brew install ffmpeg` (macOS), `winget install ffmpeg` (Windows).
-- Per YouTube yt-dlp può richiedere anche un runtime JavaScript esterno (es.
-  [deno](https://deno.com)). Se un download fallisce senza motivo evidente, aggiorna
-  yt-dlp: `uv lock --upgrade-package yt-dlp && uv sync`.
+- Per YouTube yt-dlp richiede un runtime JavaScript esterno, consigliato
+  [deno](https://deno.com): senza, taper mostra un avviso e alcuni formati possono mancare.
+  Se un download fallisce senza motivo evidente, aggiorna yt-dlp:
+  `uv lock --upgrade-package yt-dlp && uv sync`.
 
 ```bash
 git clone <questo repo> && cd taper
@@ -69,6 +70,12 @@ Crea `taper-downloads/<id>/` con l'audio, la miniatura e `<id>.taper.json` (tito
 data, capitoli, descrizione, miniatura). Se il video è già stato scaricato lo riusa invece
 di riscaricarlo.
 
+L'audio viene tenuto nel codec originale: il contenitore cambia (webm → `.opus`, mp4 →
+`.m4a`) ma lo stream è copiato. Se la sorgente ha un codec che taper non sa conservare
+(ac3, eac3, dts...) il comando si ferma con un errore chiaro invece di ricodificare in
+silenzio. I warning di yt-dlp vengono mostrati in giallo (ad esempio la mancanza di un
+runtime JavaScript, che può far sparire alcuni formati).
+
 ### plan
 
 ```bash
@@ -108,8 +115,15 @@ Come si taglia, senza perdere qualità:
 - **Sorgenti lossless** (flac, wav, alac): ricodificate in FLAC, preciso al campione e
   senza perdite.
 - L'originale non viene mai modificato; i brani già esistenti non vengono sovrascritti senza
-  `--force`. I segmenti dei piani generati sono contigui (gapless), ma con lo stream copy
-  di mp3/aac può restare un piccolo click ai confini.
+  `--force`. I brani vengono prodotti in una cartella temporanea e spostati al loro posto solo
+  se tutti sono riusciti: un errore a metà non lascia file a metà.
+- **Precisione.** Con lo stream copy il taglio è preciso al frame del codec (circa 20 ms per
+  opus). I segmenti dei piani generati sono contigui, ma i brani copiati **non sono gapless
+  al campione**: ogni segmento opus eredita il pre-skip della sorgente (circa 6,5 ms che i
+  decoder scartano) e mp3/vorbis possono perdere qualche ms ai confini. Con una sorgente
+  lossless (FLAC) i brani sono contigui al campione. La precisione è verificata nei test
+  sull'audio decodificato (impulsi a posizioni note), non solo sui metadati.
+- Segmenti più brevi di 100 ms vengono rifiutati dalla validazione del piano.
 
 Poi scrive i **tag** (titolo, artista, album artist, album, anno, numero traccia e totale)
 e incorpora la **copertina**: la miniatura ritagliata in quadrato al centro (JPEG, max
@@ -141,7 +155,9 @@ l'elenco dei brani con gli avvisi su ciò che è stato dedotto, poi chiede `c` c
 - **Mai sovrascrivere**: se la cartella dell'album esiste già ne viene creata una nuova
   (`Anno - Album (2)`). I nomi sono sanificati per Linux e Windows (caratteri vietati, nomi
   riservati, punti finali, massimo 255 byte).
-- **Idempotenza**: la sorgente è identificata dall'hash del file, non dall'URL.
+- **Idempotenza**: la sorgente è identificata dall'hash del file, non dall'URL. Se cancelli a
+  mano una cartella di album il database se ne accorge: la sorgente non risulta più "già in
+  libreria" e i vecchi record vengono ripuliti al prossimo export.
 - **Database** (SQLite): per ogni brano salva URL di origine, data di aggiunta, percorso,
   codec, bitrate, durata e se è stato ricodificato.
 - `--no-library` salta export e database e lascia i brani taggati nella cartella `--out`.
@@ -181,8 +197,9 @@ src/taper/
 Non implementati (fuori scopo per ora), ma il codice li prevede:
 
 - **Interfaccia web locale (FastAPI + wavesurfer.js)**: il core è sincrono (si esegue in un
-  threadpool), riporta l'avanzamento con `ProgressEvent` tramite una callback, si annulla con
-  un `threading.Event`, e tutti i modelli hanno `to_dict`/`from_dict`. `validate_plan()`
+  threadpool), riporta l'avanzamento con `ProgressEvent` tramite una callback (ogni fase ha il
+  suo `*_done`; `prepared` e `done` segnano la fine di `prepare()` e `apply_plan()`), si annulla
+  con un `threading.Event` (anche il download, i tagli e il rilevamento dei silenzi), e i modelli dati (`models.py`) hanno `to_dict`/`from_dict`. `validate_plan()`
   restituisce tutti gli errori con l'indice del segmento; `prepare()` e `apply_plan()`
   sono già le due operazioni che la UI chiamerebbe, con la revisione in mezzo.
 - **Nuove fonti (es. Live Music Archive)**: una funzione che produce un `FetchResult`

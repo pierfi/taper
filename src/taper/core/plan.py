@@ -9,6 +9,9 @@ like `No` as a boolean.
 from __future__ import annotations
 
 import json
+import math
+import re
+import threading
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -43,6 +46,8 @@ SOURCE_CHOICES = ("auto", SOURCE_CHAPTERS, SOURCE_DESCRIPTION, SOURCE_SILENCE)
 
 # Tolerance when checking that a segment does not run past the end of the audio.
 END_TOLERANCE_MS = 1000
+# A copy-cut of anything shorter than this can come out empty.
+MIN_SEGMENT_MS = 100
 
 SilenceDetector = Callable[..., list[tuple[int, int]]]
 
@@ -135,6 +140,7 @@ def generate_plan(
     *,
     detector: SilenceDetector | None = None,
     album_override: AlbumMeta | None = None,
+    cancel: threading.Event | None = None,
 ) -> PlanResult:
     """Create a plan for `audio` (`info` is None for local files without a sidecar)."""
     options = options or PlanOptions()
@@ -163,6 +169,7 @@ def generate_plan(
                 noise_db=options.silence_db,
                 min_silence_s=options.silence_min_s,
                 duration_ms=duration_ms,
+                cancel=cancel,
             )
             found = segments_from_silences(
                 silences, duration_ms, round(options.min_segment_s * 1000)
@@ -233,9 +240,18 @@ _HEADER = """\
 """
 
 
+_NON_PORTABLE = re.compile("[\x7f-\x9f\u2028\u2029\ufeff]")
+
+
 def _q(value: str) -> str:
-    """A YAML double-quoted scalar (JSON strings are valid YAML)."""
-    return json.dumps(value, ensure_ascii=False)
+    """A YAML double-quoted scalar (JSON strings are valid YAML).
+
+    Characters JSON leaves raw but YAML cannot round-trip (DEL, C1 controls, line
+    separators) are written as \\uXXXX escapes.
+    """
+    return _NON_PORTABLE.sub(
+        lambda m: f"\\u{ord(m.group()):04x}", json.dumps(value, ensure_ascii=False)
+    )
 
 
 def _scalar(value: Any) -> str:
@@ -290,8 +306,8 @@ def _time_value(value: Any) -> int:
     if isinstance(value, bool) or value is None:
         raise ValueError("valore mancante o non valido")
     if isinstance(value, int | float):
-        if value < 0:
-            raise ValueError("tempo negativo")
+        if not math.isfinite(value) or value < 0:
+            raise ValueError("tempo non valido")
         return round(value * 1000)
     if isinstance(value, str):
         return parse_time(value)
@@ -392,6 +408,11 @@ def validate_plan(plan: CutPlan, duration_ms: int | None = None) -> list[str]:
             problems.append(
                 f"segmento {i} ('{seg.title}'): end ({format_time(seg.end_ms)}) "
                 f"deve essere dopo start ({format_time(seg.start_ms)})"
+            )
+        elif seg.end_ms - seg.start_ms < MIN_SEGMENT_MS:
+            problems.append(
+                f"segmento {i} ('{seg.title}'): troppo breve "
+                f"({seg.end_ms - seg.start_ms} ms, minimo {MIN_SEGMENT_MS} ms)"
             )
         if not seg.title.strip():
             problems.append(f"segmento {i}: titolo vuoto")

@@ -53,3 +53,10 @@ def test_unique_path_never_overwrites(tmp_path):
     assert unique_path(p) == tmp_path / "a (2).opus"
     (tmp_path / "a (2).opus").write_bytes(b"x")
     assert unique_path(p) == tmp_path / "a (3).opus"
+
+
+def test_leading_dots_do_not_make_hidden_folders():
+    assert sanitize_component("...And You Will Know Us") == "And You Will Know Us"
+    assert sanitize_component(".hidden") == "hidden"
+    assert artist_dirname("...And You Will Know Us") == "And You Will Know Us"
+    assert sanitize_component("...", fallback="X") == "X"

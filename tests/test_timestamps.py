@@ -117,3 +117,25 @@ def test_title_with_digits_and_parentheses():
     entries = parse_description_timestamps("00:00 (Intro) 2000\n03:10 Song (Live)")
     assert entries[0].title == "(Intro) 2000"
     assert entries[1].title == "Song (Live)"
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "🎵 00:00 Intro\n🎵 03:10 Song",
+        "▶ 0:00 Intro\n▶ 3:10 Song",
+        "#1 0:00 Intro\n#2 3:10 Song",
+        "• 00:00 Intro\n• 03:10 Song",
+        "1. Intro 0:00\n2. Song 3:10",  # list number must not leak into the title
+        "#1 Intro 0:00\n#2 Song 3:10",
+    ],
+)
+def test_emoji_hash_and_trailing_numbering(text):
+    entries = parse_description_timestamps(text)
+    assert [(e.start_ms, e.title) for e in entries] == [(0, "Intro"), (190_000, "Song")]
+
+
+@pytest.mark.parametrize("text", ["inf", "-inf", "nan", "1e999", "0:inf"])
+def test_parse_time_non_finite(text):
+    with pytest.raises(ValueError):
+        parse_time(text)
