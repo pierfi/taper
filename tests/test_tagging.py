@@ -80,14 +80,14 @@ def _plan(n=3):
     return CutPlan(
         "source",
         AlbumMeta("Beyoncé & Friends", 'Live à Paris: "Night" 日本', 1999),
-        [Segment(i * 10_000, (i + 1) * 10_000, f"Song №{i + 1} — ünï") for i in range(n)],
+        [Segment(i * 10_000, (i + 1) * 10_000, f"Song №{i + 1} \u2014 ünï") for i in range(n)],
     )
 
 
 def test_tags_for_plan():
     t = tags_for_plan(_plan(), 2)
     assert (t.number, t.total, t.year) == (2, 3, 1999)
-    assert t.title == "Song №2 — ünï"
+    assert t.title == "Song №2 \u2014 ünï"
     assert t.artist == t.album_artist == "Beyoncé & Friends"
 
 

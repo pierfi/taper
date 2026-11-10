@@ -1,4 +1,4 @@
-# taper — piano d'opera
+# taper - piano d'opera
 
 Sintesi di requisiti (`prompt_init.md`) + revisione di design (Opus). Un commit per passo.
 
@@ -55,7 +55,7 @@ tests/
 | 4 | tagging + cover | mutagen per 4 formati, crop quadrato, embedding | round-trip tag per formato | fatto |
 | 5 | library + export | export.py, cover.jpg, SQLite, idempotenza | schema, collisioni, path relativi | fatto |
 | 6 | run end-to-end | pipeline.py, conferma/`--yes`, apertura editor | integrazione su file sintetico | fatto |
-| 7 | Rifinitura | README (installazione, esempi, nota ToS), messaggi d'errore | — | fatto |
+| 7 | Rifinitura | README (installazione, esempi, nota ToS), messaggi d'errore | - | fatto |
 
 ## Prerequisiti ambiente
 

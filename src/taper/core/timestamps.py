@@ -14,20 +14,20 @@ _OPEN = r"[\[(]?"
 _CLOSE = r"[\])]?"
 _BULLET = r"[^\w\[(]*"  # any run of bullets/emoji/symbols/spaces before the time
 _NUMBERING = r"(?:#?\d{1,3}[.)]?\s+)?"
-_SEP = r"[\s\-–—:|~>]*"
+_SEP = r"[\s\-–\u2014:|~>]*"
 
 _RANGE_RE = re.compile(
-    rf"^{_BULLET}{_NUMBERING}{_OPEN}(?P<t1>{_TIME}){_CLOSE}\s*[-–—~>]+\s*"
+    rf"^{_BULLET}{_NUMBERING}{_OPEN}(?P<t1>{_TIME}){_CLOSE}\s*[-–\u2014~>]+\s*"
     rf"{_OPEN}(?P<t2>{_TIME}){_CLOSE}{_SEP}(?P<title>.*)$"
 )
 _LEADING_RE = re.compile(
     rf"^{_BULLET}{_NUMBERING}{_OPEN}(?P<t1>{_TIME}){_CLOSE}{_SEP}(?P<title>.*)$"
 )
-_TRAILING_RE = re.compile(rf"^(?P<title>.*?\S)\s*[-–—:|~(\[]*\s*(?P<t1>{_TIME}){_CLOSE}\s*$")
+_TRAILING_RE = re.compile(rf"^(?P<title>.*?\S)\s*[-–\u2014:|~(\[]*\s*(?P<t1>{_TIME}){_CLOSE}\s*$")
 _STARTS_WITH_TIME = re.compile(rf"^{_OPEN}{_TIME}")
 
 _LIST_NUMBER = re.compile(r"^(?:#\d{1,3}[.)]?|\d{1,3}[.)])\s+")
-_DECORATION = " \t-–—:|~>*•·"
+_DECORATION = " \t-–\u2014:|~>*•·"
 
 
 @dataclass(frozen=True)

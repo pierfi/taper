@@ -78,7 +78,7 @@ def test_real_description():
         "01) 00:00 Intro\n02) 03:10 Song",
         "- 00:00 Intro\n- 03:10 Song",
         "00:00: Intro\n03:10: Song",
-        "00:00 — Intro\n03:10 — Song",
+        "00:00 \u2014 Intro\n03:10 \u2014 Song",
         "Intro 00:00\nSong 03:10",
         "Intro - 00:00\nSong - 03:10",
         "Intro (00:00)\nSong (03:10)",
