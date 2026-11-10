@@ -231,7 +231,7 @@ def generate_plan(
 # ------------------------------------------------------------------------------ YAML
 
 _HEADER = """\
-# taper cut plan — modificabile a mano.
+# taper cut plan - modificabile a mano.
 # Poi: taper cut <file> --plan <questo file>
 #
 # - start/end sono stringhe "H:MM:SS.mmm" (anche "M:SS" o secondi); tienile tra virgolette.

@@ -60,10 +60,12 @@ def test_resolve_precedence(tmp_path):
     assert resolve_library(None, {}) == DEFAULT_LIBRARY
 
 
-def test_windows_drive_refused_unless_allowed():
+def test_windows_drive_refused_unless_allowed(monkeypatch):
     with pytest.raises(TaperError) as exc:
         resolve_library(Path("/mnt/c/Users/me/Music"), {})
     assert ENV_ALLOW_WINDOWS in (exc.value.hint or "")
+    # fuori da WSL /mnt non esiste o non e' scrivibile: il test non deve dipendere dal sistema
+    monkeypatch.setattr("taper.config.os.access", lambda *args, **kwargs: True)
     assert resolve_library(Path("/mnt/c/x"), {ENV_ALLOW_WINDOWS: "1"}) == Path("/mnt/c/x")
     with pytest.raises(TaperError):
         ensure_library_allowed(Path("/mnt/c/anything"), {})

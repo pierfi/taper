@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/logo.svg" alt="Logo di taper: una forma d'onda tagliata da un marcatore" width="140">
+  <img src="assets/logo-cuneo-1b.svg" alt="Logo di taper: una forma d'onda tagliata da un marcatore" width="140">
 </p>
 
 <h1 align="center">taper</h1>
@@ -11,8 +11,8 @@
 ---
 
 App personale a riga di comando per scaricare tracce audio (YouTube e le altre fonti
-supportate da [yt-dlp](https://github.com/yt-dlp/yt-dlp)), dividerle in brani — caso d'uso
-principale: i concerti —, taggarle e archiviarle in una libreria ordinata.
+supportate da [yt-dlp](https://github.com/yt-dlp/yt-dlp)), dividerle in brani (caso d'uso
+principale: i concerti), taggarle e archiviarle in una libreria ordinata.
 
 Principio guida: **non ricodificare mai se non serve**, e dirlo ogni volta che si perde qualità.
 
@@ -23,7 +23,7 @@ Principio guida: **non ricodificare mai se non serve**, e dirlo ogni volta che s
 ## Requisiti e installazione
 
 - Linux, WSL, macOS o Windows. Python 3.11+ (lo gestisce uv).
-- [uv](https://docs.astral.sh/uv/) — `curl -LsSf https://astral.sh/uv/install.sh | sh`
+- [uv](https://docs.astral.sh/uv/) - `curl -LsSf https://astral.sh/uv/install.sh | sh`
 - **ffmpeg e ffprobe nel PATH**: `sudo apt install ffmpeg` (Debian/Ubuntu/WSL),
   `brew install ffmpeg` (macOS), `winget install ffmpeg` (Windows).
 - Per YouTube yt-dlp richiede un runtime JavaScript esterno, consigliato
@@ -32,12 +32,40 @@ Principio guida: **non ricodificare mai se non serve**, e dirlo ogni volta che s
   `uv lock --upgrade-package yt-dlp && uv sync`.
 
 ```bash
-git clone <questo repo> && cd taper
+git clone https://github.com/pierfi/taper.git && cd taper
 uv sync                  # crea l'ambiente e installa le dipendenze
 uv run taper --help      # si usa con "uv run taper ..."
-# oppure, per avere il comando "taper" ovunque:
-uv tool install .
 ```
+
+### Come comando di sistema
+
+Per avere `taper` come un comando qualunque, da qualsiasi cartella e senza `uv run`,
+si installa come *tool* di uv: uv lo mette in un ambiente isolato e crea l'eseguibile
+nella sua cartella dei binari.
+
+```bash
+uv tool install git+https://github.com/pierfi/taper.git   # dal repo, senza clonare
+# oppure, da un clone: uv tool install .
+# oppure, da un clone che stai modificando: uv tool install -e .
+
+taper --version
+```
+
+| Ambiente | Cartella dei binari | Se `taper` non si trova |
+|---|---|---|
+| Linux, WSL, macOS | `~/.local/bin` | `uv tool update-shell` e riapri il terminale |
+| Windows (cmd, PowerShell) | `%USERPROFILE%\.local\bin` | `uv tool update-shell` e riapri il terminale |
+
+Note per ambiente:
+
+- **WSL**: è un normale Linux, il comando vale solo dentro la distribuzione dove lo hai
+  installato. ffmpeg va installato in WSL (`sudo apt install ffmpeg`), non basta quello di
+  Windows. La libreria di default sta nel filesystem Linux (vedi [Libreria](#libreria)).
+- **Windows cmd**: installa uv con `powershell -c "irm https://astral.sh/uv/install.ps1 | iex"`
+  e ffmpeg con `winget install ffmpeg`, poi `uv tool install ...` come sopra: da una nuova
+  finestra di cmd `taper --help` funziona ovunque.
+- **Aggiornare**: `uv tool upgrade taper` (con `-e` basta un `git pull`). **Disinstallare**:
+  `uv tool uninstall taper`.
 
 ## Avvio rapido
 
@@ -48,6 +76,8 @@ uv run taper run "https://www.youtube.com/watch?v=..." \
 
 Scarica, prepara il piano di taglio e **si ferma per farti controllare** artista, album,
 anno e brani; poi taglia, tagga ed esporta in `~/taper-library`. Dettagli sotto.
+
+Un esempio completo, con l'output vero di ogni passo: **[docs/esempio.md](docs/esempio.md)**.
 
 ## Comandi
 
@@ -97,8 +127,8 @@ sorgente arriva il taglio). Tempi e titoli sono sempre tra virgolette (in YAML `
 non quotato sarebbe un numero e `No` un booleano). I segmenti devono essere in ordine e
 non sovrapposti. Un piano esistente non viene mai sovrascritto senza `--force`.
 
-**Controlla sempre artista, album e anno.** Sono ricavati dal video — canale, titolo e
-data di upload — e di solito non coincidono con quelli del concerto. Correggili nel
+**Controlla sempre artista, album e anno.** Sono ricavati dal video - canale, titolo e
+data di upload - e di solito non coincidono con quelli del concerto. Correggili nel
 piano oppure con `--artist`, `--album`, `--year`.
 
 ### cut
@@ -220,3 +250,16 @@ uv run ruff check . && uv run ruff format .
 
 I test non scrivono mai nella libreria reale (`TAPER_LIBRARY` è reindirizzata a una cartella
 temporanea) e non usano la rete.
+
+## Contribuire e lavorare con strumenti IA
+
+taper è sviluppato in cooperazione con assistenti IA (Claude Code, claude.ai, altri per le
+seconde opinioni). Le regole di quella cooperazione sono scritte e pubbliche:
+
+- [CLAUDE.md](CLAUDE.md): lo **statuto**: architettura, vincoli, convenzioni, regole di lavoro;
+- [docs/workflow.md](docs/workflow.md): il percorso da un'idea alla PR, e chi fa cosa;
+- [docs/statuto-ia.md](docs/statuto-ia.md): lo statuto in grafica: fase creativa, review e strategia di branch delle proposte;
+- [proposals/](proposals/README.md): le proposte di nuove funzioni, con il loro modello.
+
+Ogni modifica entra con una pull request su `main`, aperta con `gh pr create` e descritta
+con il [template](.github/pull_request_template.md) del repo.

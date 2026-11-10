@@ -6,3 +6,21 @@ __pycache__/
 dist/
 *.egg-info/
 taper-downloads/
+
+# file scaricati e prodotti da taper: mai versionati
+taper-library/
+*.part
+*.opus
+*.m4a
+*.mp3
+*.ogg
+*.flac
+*.wav
+*.aac
+*.mp4
+*.webm
+*.mkv
+*.m4v
+
+# metadati Windows dei file scaricati (WSL)
+*:Zone.Identifier

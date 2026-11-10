@@ -82,7 +82,7 @@ def main(
         ),
     ] = False,
 ) -> None:
-    """taper — audio downloader, splitter and tagger."""
+    """taper - audio downloader, splitter and tagger."""
 
 
 def fail(error: TaperError) -> typer.Exit:
