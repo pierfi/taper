@@ -9,6 +9,12 @@ taper-downloads/
 
 # file scaricati e prodotti da taper: mai versionati
 taper-library/
+.taper/
+*.webp
+*.taper.json
+*.plan.yaml
+# ...tranne i piani di esempio nella documentazione
+!docs/templates/*.plan.yaml
 *.part
 *.opus
 *.m4a
