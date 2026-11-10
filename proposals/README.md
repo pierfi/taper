@@ -23,7 +23,7 @@ git fetch && git branch -r --list 'origin/proposals/*' 'origin/feature/*'
 
 | N. | Proposta | Stato | Aggiornata | Decisioni aperte |
 |---|---|---|---|---|
-| | _nessuna proposta ancora_ | | | |
+| [0001](0001-video-track/) | Traccia video equivalente all'audio | bozza | 2026-11-10 | D3 (contratto con il progetto parallelo), D6, D7 |
 
 ## Com'è fatta una proposta
 
