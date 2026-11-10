@@ -64,8 +64,10 @@ Note per ambiente:
 - **Windows cmd**: installa uv con `powershell -c "irm https://astral.sh/uv/install.ps1 | iex"`
   e ffmpeg con `winget install ffmpeg`, poi `uv tool install ...` come sopra: da una nuova
   finestra di cmd `taper --help` funziona ovunque.
-- **Aggiornare**: `uv tool upgrade taper` (con `-e` basta un `git pull`). **Disinstallare**:
-  `uv tool uninstall taper`.
+- **Aggiornare**: se l'hai installato da git, `uv tool upgrade taper`; da un clone,
+  `git pull && uv tool install --reinstall .` (qui `upgrade` non basta: risponde
+  "Nothing to upgrade"); con `-e` basta il `git pull`, e se cambiano le dipendenze
+  `uv tool install --reinstall -e .`. **Disinstallare**: `uv tool uninstall taper`.
 
 ## Avvio rapido
 
@@ -126,6 +128,8 @@ Il piano è un file YAML: per ogni segmento `start`, `end`, `title` e `source` (
 sorgente arriva il taglio). Tempi e titoli sono sempre tra virgolette (in YAML `1:02:33`
 non quotato sarebbe un numero e `No` un booleano). I segmenti devono essere in ordine e
 non sovrapposti. Un piano esistente non viene mai sovrascritto senza `--force`.
+
+Un piano commentato da copiare e adattare: [docs/templates/esempio.plan.yaml](docs/templates/esempio.plan.yaml).
 
 **Controlla sempre artista, album e anno.** Sono ricavati dal video - canale, titolo e
 data di upload - e di solito non coincidono con quelli del concerto. Correggili nel
@@ -257,8 +261,7 @@ taper è sviluppato in cooperazione con assistenti IA (Claude Code, claude.ai, a
 seconde opinioni). Le regole di quella cooperazione sono scritte e pubbliche:
 
 - [CLAUDE.md](CLAUDE.md): lo **statuto**: architettura, vincoli, convenzioni, regole di lavoro;
-- [docs/workflow.md](docs/workflow.md): il percorso da un'idea alla PR, e chi fa cosa;
-- [docs/statuto-ia.md](docs/statuto-ia.md): lo statuto in grafica: fase creativa, review e strategia di branch delle proposte;
+- [docs/statuto-ia.md](docs/statuto-ia.md): la guida illustrata: fase creativa, review, strategia di branch delle proposte e registro dei task;
 - [proposals/](proposals/README.md): le proposte di nuove funzioni, con il loro modello.
 
 Ogni modifica entra con una pull request su `main`, aperta con `gh pr create` e descritta
