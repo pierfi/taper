@@ -66,4 +66,4 @@ documentazione, aggiornamento di stato e registro.
 
 | Data | Dove | Cosa |
 |---|---|---|
-| GG/MM/AAAA | claude.ai | prima versione |
+| AAAA-MM-GG | claude.ai | prima versione |

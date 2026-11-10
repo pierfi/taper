@@ -2,9 +2,9 @@
 
 Statuto di cooperazione con gli strumenti IA: il contesto condiviso da ogni
 istanza di Claude che lavora su questo repo (Claude Code CLI, web/app,
-@claude su GitHub, claude.ai) e la base per le revisioni di altri
-assistenti. Come si passa da un'idea alla PR: [docs/workflow.md](docs/workflow.md);
-lo statuto in grafica, con la strategia di branch: [docs/statuto-ia.md](docs/statuto-ia.md).
+claude.ai) e la base per le revisioni di altri assistenti. **Le regole stanno
+solo qui**; la guida illustrata, con i diagrammi del flusso dall'idea alla PR e
+la strategia di branch delle proposte, è [docs/statuto-ia.md](docs/statuto-ia.md).
 Le istruzioni valide su una sola macchina stanno in `CLAUDE.local.md`, non
 versionato.
 
@@ -25,7 +25,7 @@ src/taper/
   models.py   dataclass dei dati, con to_dict/from_dict; tempi in ms interi
   errors.py   TaperError(message, hint) e sottoclassi
 tests/        un file per modulo, pytest; audio sintetico, niente rete
-docs/         guide e documenti (workflow, esempio), immagini in docs/img/
+docs/         guida illustrata (statuto-ia), esempio d'uso, templates/ (piano di esempio)
 proposals/    proposte di nuove funzioni (proposals/README.md)
 assets/       logo
 ```
@@ -74,8 +74,9 @@ uv run taper --help
 
 ## Regole di lavoro
 
-- Mai commit diretti su `main` (dopo il primo caricamento del repo): si lavora
-  su un branch e si entra con una **pull request**, che l'utente rivede e mergia.
+- **Mai una push su `main`** (dopo il primo caricamento del repo): si lavora
+  sempre su un branch staccato e si entra con una **pull request**, che
+  l'utente rivede e mergia.
 - Le PR si aprono con **`gh pr create`**, usando il template di
   [.github/pull_request_template.md](.github/pull_request_template.md). Si mergia
   solo su richiesta dell'utente, con merge commit.
@@ -83,17 +84,19 @@ uv run taper --help
   issue con criteri di accettazione. I fix piccoli vanno direttamente in PR.
 - Branch: `proposals/NNNN-nome` per una proposta in discussione (tocca solo
   `proposals/`), `feature/<nome>` per una feature, `tpr-XXX-<nome>` per un task
-  senza proposta (flusso di lavoro, manutenzione, fix). Un branch lungo si aggiorna con
-  `git merge main`, mai con rebase o force push dopo la pubblicazione.
+  senza proposta (flusso di lavoro, manutenzione, fix). Un branch lungo si
+  aggiorna con `git merge main`, mai con rebase o force push dopo la
+  pubblicazione. I branch `proposals/*` non si cancellano mai, nemmeno dopo il
+  merge: una proposta scartata o sostituita esiste solo lì.
 - In una sessione interattiva: prima di ogni commit mostrare le modifiche e
-  aspettare l'ok. Da @claude: branch e PR, mai merge.
+  aspettare l'ok.
 - Commit piccoli e coerenti, test verdi a ogni commit.
 
 ### Codici dei task
 
 - L'acronimo di progetto è **TPR** (taper). Ogni task futuro è `TPR-XXX`: tre
   cifre, in ordine, mai riusate (`TPR-001`, `TPR-002`, ...). Il codice compare
-  nel [registro](docs/workflow.md#registro), nei commit, nel titolo della PR e,
+  nel [registro](docs/statuto-ia.md#7-registro), nei commit, nel titolo della PR e,
   se il branch è di un solo task, nel suo nome (`tpr-XXX-<nome>`).
 - Le fasi più grandi sono le **milestone**, con codice `M<N>` (`M1`, `M2`, ...),
   registrate nello stesso registro. Una fase può avere un codice specifico
@@ -110,8 +113,11 @@ uv run taper --help
 - **Una sola riga**, in inglese, all'imperativo: niente corpo, niente label.
 - `<task-code>` è `TPR-XXX` oppure il codice di una milestone (`M1`).
 - Esempi: `TPR-012: Add the AcoustID tagging step`, `M1: Close the first usable release`.
-- Il titolo della PR ha lo stesso formato. Il dettaglio sta nella descrizione
-  della PR, che segue il [template](.github/pull_request_template.md).
+- Il titolo della PR ha lo stesso formato, all'imperativo. Il dettaglio sta
+  nella descrizione della PR, che segue il
+  [template](.github/pull_request_template.md).
+- Il messaggio del merge commit è il titolo della PR (impostazione del repo):
+  per questo il titolo della PR deve rispettare il formato.
 - **Niente righe di attribuzione** (`Co-Authored-By`, `Claude-Session` o simili),
   né nei commit né nelle descrizioni delle PR.
 - I commit precedenti a `TPR-001` (i `Step N:` della prima costruzione) restano
@@ -120,7 +126,9 @@ uv run taper --help
 ## Documentazione
 
 - `README.md` descrive comandi e uso per chi usa il progetto: si aggiorna
-  quando cambiano. L'esempio in `docs/esempio.md` si rifà se cambia l'output.
+  quando cambiano. L'esempio in `docs/esempio.md` si rifà se cambia l'output, e il piano in
+  `docs/templates/` resta valido (lo controlla `tests/test_docs.py`).
 - Una proposta tiene aggiornati il suo stato e il suo registro
   ([proposals/README.md](proposals/README.md)).
-- Chiudendo un task si aggiorna il registro di `docs/workflow.md` con ogni task chiuso.
+- Ogni task ha la sua riga nel registro di [docs/statuto-ia.md](docs/statuto-ia.md#7-registro),
+  aggiornata nella PR del task.

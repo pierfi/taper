@@ -9,7 +9,7 @@ leggere, discutere e portare avanti:
 
 Una proposta è una cartella: tutto quello che serve per capirla sta lì dentro,
 e il suo README basta da solo a un assistente che non conosce il progetto. È il
-primo passo del [flusso di lavoro](../docs/workflow.md).
+primo passo del [flusso di lavoro](../docs/statuto-ia.md).
 
 ## Indice
 
@@ -72,7 +72,7 @@ bozza ──► in-discussione ──► accettata ──► realizzata
 
 ## Branch
 
-Lo schema illustrato è in [docs/statuto-ia.md](../docs/statuto-ia.md#4-la-strategia-di-branch).
+Lo schema illustrato è in [docs/statuto-ia.md](../docs/statuto-ia.md#5-la-strategia-di-branch).
 
 - Una proposta nasce da `main` aggiornato, sul branch `proposals/NNNN-nome`;
   tocca solo `proposals/` e non entra in `main` finché si discute.
@@ -106,10 +106,11 @@ poi apri la PR con gh pr create.
 claude.ai non scrive nel repo: legge i file che gli si danno (o il repo
 collegato) e scrive la proposta come testo. Chi la riceve (Claude Code o
 l'autore) la salva in `proposals/NNNN-nome/README.md` su un branch
-`proposals/NNNN-nome` e apre la PR con `gh pr create`.
+`proposals/NNNN-nome`, con un commit e un push: **nessuna PR** finché la
+proposta è in discussione (la PR è una sola, a feature realizzata).
 
 ```
-Leggi README.md, CLAUDE.md, docs/workflow.md e proposals/README.md di taper
+Leggi README.md, CLAUDE.md, docs/statuto-ia.md e proposals/README.md di taper
 (https://github.com/pierfi/taper). Valuta il lavoro fatto e scrivi una
 proposta per la prossima funzione che ti sembra più utile, usando il modello
 di proposals/_modello/README.md: in italiano, con decisioni aperte numerate,
