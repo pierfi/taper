@@ -1,184 +1,164 @@
 # Esempio d'uso
 
-Un concerto di un'ora e cinquanta, da un URL a una libreria di 20 brani taggati,
-passo per passo. I blocchi di output sono quelli veri di taper (taglio solo le
-righe ripetitive, segnate con `[...]` e i percorsi lunghi accorciati); la
-cartella `taper-downloads/` e la libreria sono fuori da git.
-Per i comandi nel dettaglio: [README](../README.md).
+Da un file audio di un "concerto" a una libreria di brani taggati, passo per
+passo. L'esempio è **riproducibile da zero**: la sorgente è un file sintetico
+generato con ffmpeg (quattro note separate da silenzi), quindi non serve
+scaricare niente né usare contenuti di altri. I blocchi di output sono quelli
+veri di taper; le righe ripetitive sono abbreviate con `[...]`.
+
+Per i comandi nel dettaglio: [README](../README.md). Un piano di taglio
+commentato da copiare: [templates/esempio.plan.yaml](templates/esempio.plan.yaml).
+
+## 0. La sorgente
+
+```bash
+ffmpeg -f lavfi -i "sine=frequency=262:duration=45" -f lavfi -i "anullsrc=r=48000:cl=mono:d=3" \
+       -f lavfi -i "sine=frequency=330:duration=60" -f lavfi -i "anullsrc=r=48000:cl=mono:d=3" \
+       -f lavfi -i "sine=frequency=392:duration=50" -f lavfi -i "anullsrc=r=48000:cl=mono:d=3" \
+       -f lavfi -i "sine=frequency=523:duration=40" \
+       -filter_complex "[0][1][2][3][4][5][6]concat=n=7:v=0:a=1,aformat=sample_rates=48000:channel_layouts=mono" \
+       -c:a libopus -b:a 64k concerto.opus
+```
+
+Con un video vero il punto di partenza è `taper fetch <url>`: scarica l'audio
+**nel codec originale** (di solito opus), senza ricodificare, in una cartella
+con l'audio, la miniatura e un file `.taper.json` con titolo, canale, data,
+capitoli e descrizione. Rilanciarlo riusa quella cartella. Da qui in poi i
+passi sono gli stessi: taper lavora su qualunque file audio locale.
 
 > Usa taper su contenuti tuoi o liberi: vedi la nota legale nel README.
 
-## 1. Scaricare
+## 1. Preparare il piano di taglio
 
 ```bash
-taper fetch "https://www.youtube.com/watch?v=J_7TEw59ww8" -o taper-downloads
-```
-
-taper scarica l'audio **nel codec originale** (qui opus), senza ricodificare, e
-crea una cartella per il video:
-
-```
-taper-downloads/J_7TEw59ww8/
-├── J_7TEw59ww8.opus        99 MB   l'audio, intatto
-├── J_7TEw59ww8.taper.json   3 KB   titolo, canale, data, capitoli, descrizione
-└── J_7TEw59ww8.webp        46 KB   la miniatura (diventerà la copertina)
-```
-
-Rilanciare il comando riusa la cartella invece di riscaricare.
-
-## 2. Preparare il piano di taglio
-
-```bash
-taper plan taper-downloads/J_7TEw59ww8/J_7TEw59ww8.opus
+taper plan concerto.opus --artist "Trio Sintetico" --album "Live a Nessun Posto" --year 2026
 ```
 
 ```
-Piano creato da 'chapters': 20 segmenti
-  Artista: Sepehr Rashidi  |  Album: John Mayer - Rise For The River (21/08/2022)  |  Anno: 2023
-   1.     0:00 →     8:25  Queen of California
-   2.     8:25 →    11:52  The Age of Worry
-   3.    11:52 →    16:15  Shadow Days
-  [...]
-  19.  1:32:32 →  1:40:40  Dear Marie
-  20.  1:40:40 →  1:51:15  In the Blood
-  ! Artista ricavato dal canale 'Sepehr Rashidi': probabilmente va corretto in 'album.artist' (o con --artist).
-  ! Anno ricavato dalla data di upload (20230828): potrebbe non essere l'anno del concerto (--year).
-  ! Il titolo dell'album è il titolo del video: sistemalo in 'album.album' (--album).
+Piano creato da 'silence': 4 segmenti
+  Artista: Trio Sintetico  |  Album: Live a Nessun Posto  |  Anno: 2026
+   1.     0:00 →     0:46  Track 01
+   2.     0:46 →     1:49  Track 02
+   3.     1:49 →     2:42  Track 03
+   4.     2:42 →     3:24  Track 04
+  ! Tagli da silenzi: controlla i confini, nei live possono essere imprecisi.
 
-Piano: taper-downloads/J_7TEw59ww8/J_7TEw59ww8.plan.yaml
+Piano: concerto.plan.yaml
+Modificalo se serve, poi: taper cut concerto.opus --plan concerto.plan.yaml
 ```
 
-I tagli arrivano dai **capitoli** del video. Se non ci sono, taper cerca i
-timestamp nella descrizione e, in ultima istanza, i silenzi (vedi
-[più sotto](#quando-non-ci-sono-capitoli-né-timestamp)). Le righe con `!` dicono
-cosa è stato **dedotto** e quindi va controllato: qui artista, album e anno sono
-quelli del canale e del video, non del concerto.
+Questo file non ha capitoli né timestamp, quindi taper ha tagliato sui
+**silenzi** e lo dice. Con un video di YouTube i tagli arrivano, in ordine di
+priorità, dai capitoli, dai timestamp nella descrizione (`00:00 Titolo`) e solo
+in ultima istanza dai silenzi. Le righe con `!` segnalano cosa è stato
+**dedotto** e va controllato: con un video vero, artista, album e anno
+verrebbero da canale, titolo e data di upload, che di solito non sono quelli del
+concerto (qui li abbiamo già passati con `--artist`, `--album`, `--year`).
 
-## 3. Correggere il piano
+## 2. Correggere il piano
 
-Il piano è un file YAML da modificare a mano. Si correggono i metadati dell'album
-(oppure si passano `--artist`, `--album`, `--year` a `plan`):
+Il piano è un file YAML da modificare a mano
+([un esempio commentato](templates/esempio.plan.yaml)). Qui bastano i titoli:
 
 ```yaml
-album:
-  artist: "John Mayer"            # era "Sepehr Rashidi"
-  album: "Rise For The River"     # era il titolo del video
-  year: 2022                      # era 2023
 segments:
   - start: "0:00:00.000"
-    end: "0:08:25.000"
-    title: "Queen of California"
-    source: chapters              # da dove arriva questo taglio
+    end: "0:00:46.500"
+    title: "Do"                   # era "Track 01"
+    source: silence
   [...]
 ```
 
 Tempi e titoli restano tra virgolette; i segmenti devono essere in ordine e non
 sovrapposti. Si possono rinominare, spostare i confini, togliere o unire brani.
 
-## 4. Tagliare, taggare, archiviare
+## 3. Tagliare, taggare, archiviare
 
 ```bash
-taper cut taper-downloads/J_7TEw59ww8/J_7TEw59ww8.opus \
-    --plan taper-downloads/J_7TEw59ww8/J_7TEw59ww8.plan.yaml \
-    --library ./taper-library
+taper cut concerto.opus --plan concerto.plan.yaml --library ./taper-library
 ```
 
 ```
-  taglio [1/20 Queen of California]
+  taglio [1/4 Do]
   [...]
-  export [20/20 20 - In the Blood.opus]
+  Taglio completato
+  tag [1/4 Do]
+  [...]
+  Tag scritti
+  export [1/4 01 - Do.opus]
+  [...]
   Export completato
-Tagliati 20 brani → [...]/taper-library/John Mayer/2022 - Rise For The River
-  01 - Queen of California.opus  (8:25, copy)
-  02 - The Age of Worry.opus  (3:27, copy)
-  [...]
-  20 - In the Blood.opus  (10:35, copy)
+  Fatto
+Tagliati 4 brani → ./taper-library/Trio Sintetico/2026 - Live a Nessun Posto
+  01 - Do.opus  (0:46, copy)
+  02 - Mi.opus  (1:03, copy)
+  03 - Sol.opus  (0:53, copy)
+  04 - Do alto.opus  (0:41, copy)
 Nessuna perdita di qualità.
-Tag scritti (con copertina).
+Tag scritti (senza copertina).
+Libreria: ./taper-library
+Database: ./taper-library/.taper/library.db
+  ! Nessuna copertina trovata: i brani non avranno immagine incorporata.
 ```
 
-Con `copy` accanto a ogni brano: **stream copy**, nessuna ricodifica (circa 20
-secondi per l'intero concerto). Se un taglio non fosse preciso, taper
-ricodificherebbe solo quel brano e lo direbbe qui.
+Con `copy` accanto a ogni brano: **stream copy**, nessuna ricodifica. Se un
+taglio non fosse preciso, taper ricodificherebbe solo quel brano e lo direbbe
+qui. La copertina, per un file locale, si cerca come `concerto.jpg` (o
+`cover.jpg`) accanto al file; per un video scaricato è la miniatura.
 
 Senza `--library` la libreria è `$TAPER_LIBRARY`, altrimenti `~/taper-library`.
 
-## 5. Il risultato
+## 4. Il risultato
 
 ```
 taper-library/
 ├── .taper/library.db
-└── John Mayer/
-    └── 2022 - Rise For The River/
-        ├── 01 - Queen of California.opus
-        ├── 02 - The Age of Worry.opus
-        ├── [...]
-        ├── 20 - In the Blood.opus
-        └── cover.jpg
+└── Trio Sintetico/
+    └── 2026 - Live a Nessun Posto/
+        ├── 01 - Do.opus
+        ├── 02 - Mi.opus
+        ├── 03 - Sol.opus
+        └── 04 - Do alto.opus
 ```
 
-I tag di un brano (`08 - Love Is a Verb.opus`), con la copertina incorporata:
+I tag di un brano, letti con
+`ffprobe -v error -select_streams a:0 -show_entries stream_tags -of default=nw=1 "02 - Mi.opus"`:
 
 ```
-album         Rise For The River
-albumartist   John Mayer
-artist        John Mayer
-date          2022
-title         Love Is a Verb
-tracknumber   8
-totaltracks   20
+TAG:title=Mi
+TAG:artist=Trio Sintetico
+TAG:album=Live a Nessun Posto
+TAG:album_artist=Trio Sintetico
+TAG:date=2026
+TAG:track=2
+TAG:tracktotal=4
+TAG:totaltracks=4
 ```
 
 Il database (SQLite, `.taper/library.db`) ricorda per ogni brano titolo, artista,
-album, anno, codec, bitrate, durata e se è stato ricodificato (`reencoded`: qui 0
-per tutti i 20 brani).
+album, anno, codec, bitrate, durata e se è stato ricodificato (`reencoded`, qui 0
+per tutti).
 
 Rilanciare `cut` sulla stessa sorgente non crea doppioni: la sorgente è
 riconosciuta dal suo hash.
 
 ```
-Errore: Questa sorgente è già in libreria ('John Mayer - Rise For The River (21/08/2022)',
-20 brani, aggiunta il 2026-11-10T19:19:57+00:00; es. John Mayer/2022 - Rise For The River/01 - Queen of California.opus).
+Errore: Questa sorgente è già in libreria ('concerto', 4 brani, aggiunta il 2026-11-10T20:33:40+00:00; es. Trio Sintetico/2026 - Live a Nessun Posto/01 - Do.opus).
 Suggerimento: Usa --allow-duplicate per esportarla di nuovo in una nuova cartella.
 ```
 
 ## Tutto in un comando: `run`
 
-I passi 1-4 si possono fare in uno, con la pausa di revisione in mezzo:
+Per un URL, i passi di scaricamento, piano e taglio si fanno in uno, con la
+pausa di revisione in mezzo:
 
 ```bash
-taper run "https://www.youtube.com/watch?v=J_7TEw59ww8" \
-    --artist "John Mayer" --album "Rise For The River" --year 2022
+taper run "https://www.youtube.com/watch?v=..." \
+    --artist "Nome Artista" --album "Live a Roma" --year 2019
 ```
 
 `run` scarica (o riusa), prepara il piano e **si ferma** per farti controllare
 artista, album, anno e brani: continui, apri il piano nell'editor o annulli.
-`--yes` salta la revisione (per gli script).
-
-## Quando non ci sono capitoli né timestamp
-
-Non tutti i video sono così ordinati. Questo è un altro concerto, senza capitoli
-e con la scaletta nella descrizione ma senza tempi:
-
-```bash
-taper plan taper-downloads/353lHGbvu8o/353lHGbvu8o.opus
-```
-
-```
-Piano creato da 'silence': 12 segmenti
-  Artista: KEXP  |  Album: The Lumineers - Full Performance (Live on KEXP)  |  Anno: 2016
-   1.     0:00 →     1:10  Track 01
-   2.     1:10 →     7:31  Track 02
-  [...]
-  10.    38:16 →    55:44  Track 10
-  11.    55:44 →    56:35  Track 11
-  12.    56:35 →  1:06:39  Track 12
-  ! Tagli da silenzi: controlla i confini, nei live possono essere imprecisi.
-  [...]
-```
-
-taper ha tagliato sui silenzi e lo dice: la descrizione elenca 15 brani, i silenzi
-ne trovano 12, e `Track 10` dura 17 minuti perché tra un brano e l'altro ci sono
-applausi, non silenzio. Qui il piano va corretto ascoltando: si aggiungono i
-confini mancanti, si danno i titoli veri e solo dopo si lancia `cut`. È il motivo
-per cui `run` si ferma sempre a chiedere.
+`--yes` salta la revisione (per gli script). È il motivo per cui `run` si ferma
+sempre: i tagli da silenzi o da una descrizione imprecisa vanno controllati
+ascoltando, prima di tagliare.

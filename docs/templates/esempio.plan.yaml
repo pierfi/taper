@@ -1,0 +1,46 @@
+# Piano di taglio di esempio, commentato. Si copia e si adatta:
+#   cp docs/templates/esempio.plan.yaml mio-concerto.plan.yaml
+# poi:  taper cut mio-concerto.opus --plan mio-concerto.plan.yaml
+#
+# Di solito non si scrive da zero: `taper plan <file>` ne genera uno da capitoli,
+# timestamp della descrizione o silenzi, e qui si corregge a mano.
+#
+# - start/end: stringhe "H:MM:SS.mmm" (vanno bene anche "M:SS" o i secondi).
+#   Sempre tra virgolette: in YAML 1:02:33 non quotato sarebbe un numero.
+# - I segmenti devono essere in ordine e non sovrapposti; ogni brano dura almeno 100 ms.
+# - Anche i titoli vanno tra virgolette (in YAML `No` sarebbe un booleano).
+# - source dice da dove arriva il taglio: chapters, description, silence o manual.
+#   Quando si corregge un taglio a mano si puo' mettere manual.
+
+version: 1
+
+# Nome del file audio da tagliare (informativo: il file si passa a `taper cut`).
+source_file: "concerto.opus"
+
+# Controlla sempre queste tre voci: taper le deduce dal video (canale, titolo, data
+# di upload) e di solito non coincidono con quelle del concerto.
+album:
+  artist: "Trio Sintetico"
+  album: "Live a Nessun Posto"
+  year: 2026
+
+segments:
+  - start: "0:00:00.000"
+    end: "0:00:46.500"
+    title: "Do"
+    source: silence      # tagliato da un silenzio rilevato
+
+  - start: "0:00:46.500"
+    end: "0:01:49.500"
+    title: "Mi"
+    source: silence
+
+  - start: "0:01:49.500"
+    end: "0:02:42.500"
+    title: "Sol"
+    source: manual       # confine spostato a mano dopo un ascolto
+
+  - start: "0:02:42.500"
+    end: "0:03:24.006"
+    title: "Do alto"
+    source: silence
